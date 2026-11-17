@@ -63,6 +63,35 @@ description: >
 
 5.7 + 7.5 + 22 + 25 ≈ 60 s。把这四项去掉，就是几秒。
 
+### 1.1 倒立摆应用的实测分阶段（2026-11-18，`192.168.3.120`，GCAN-8200 + EC1 总线，2 从站）
+
+`FurutaPendulum` 自己打的点（`Control/ConnectTiming.cs`，每次 Connect 打一条 `[TIMING]` 汇总）。
+口径分两个，**别混着报**：
+
+- ① `since_process_start` = 进程启动 → 连上（含原生库一次性加载）
+- ② `connect_total` = 本次 `Connect()` 入口 → 连上（**用户说的"3 秒连接"按这个判**）
+
+| 阶段 | 冷启动首次连接 | 同进程 disconnect 后重连 | 说明 |
+|---|---|---|---|
+| 原生库预热（进程一次，不计入②） | ~5.6 s | 0 | 第一次碰 `DarraEtherCAT` 静态成员就付清 |
+| 网卡解析 `nic_resolve` | 1121 ms | **1 ms** | 重连命中进程内缓存（MAC + DENI 路径）后跳过两次枚举 |
+| `build` | 2907 ms | **421 ms** | DENI + 不传 `SetEsiFiles` + `DisableAutoStartup` |
+| `preop` | 1107 ms | 23 ms | |
+| `preop_gate`（身份/映射/DC 校验） | 187 ms | 125 ms | |
+| `safeop` | 997 ms | 987 ms | 状态切换的轮询台阶，压不下去 |
+| `op` | 437 ms | 430 ms | 同上 |
+| **② connect_total** | **6787 ms** | **1988 ms** | 重连 ✅ 达标，冷启动 ❌ |
+| ① since_process_start | 13642 ms | 16452 ms | 冷启动被一次性原生加载拖住 |
+
+三个能直接抄的结论：
+
+1. **网卡别每次都重新枚举**。每次连接都跑 `NetworkInterface.GetAllNetworkInterfaces()` +
+   `DarraEtherCAT.GetNetworkAdapters(false)` 要 1.1 s；DENI 的 MAC 不变就缓存 (MAC, DENI 路径) → 名字，重连降到 1 ms。
+2. **SDK 预热要放在开窗口时**，不要等用户点"连接"。GUI 启动后台线程摸一次 `GetNetworkAdapters(false)`
+   （只枚举不活扫），把 5.6 s 压在用户看界面的时候；`Connect()` 里再同步等这次预热（通常已完成）。
+   一次性 CLI 进程没有这段重叠，所以 CLI 的"进程启动→连上"仍是十几秒。
+3. **`safeop` + `op` 各约 1 s 是状态机轮询的固有台阶**，想再压只能改状态切换的等待粒度，不要在业务层硬等。
+
 ---
 
 ## 2. 正解：DENI 全量配置
