@@ -9,20 +9,14 @@ Personal — available in every project you open:
 
 ```bash
 mkdir -p ~/.claude/skills
-cp -r skills/darra-ethercat-windows  ~/.claude/skills/
-cp -r skills/darra-ethercat          ~/.claude/skills/
-cp -r skills/darra-runtime-install   ~/.claude/skills/
-cp -r skills/darra-verify            ~/.claude/skills/
+cp -r skills/*  ~/.claude/skills/
 ```
 
 Project-scoped — checked in with the repository so every teammate gets it:
 
 ```bash
 mkdir -p .claude/skills
-cp -r /path/to/ethercat-skill/skills/darra-ethercat-windows  .claude/skills/
-cp -r /path/to/ethercat-skill/skills/darra-ethercat          .claude/skills/
-cp -r /path/to/ethercat-skill/skills/darra-runtime-install   .claude/skills/
-cp -r /path/to/ethercat-skill/skills/darra-verify            .claude/skills/
+cp -r /path/to/ethercat-skill/skills/*  .claude/skills/
 ```
 
 The layout inside each directory must stay exactly `skills/<name>/SKILL.md` — Claude Code

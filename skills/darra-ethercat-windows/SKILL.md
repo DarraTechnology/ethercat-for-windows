@@ -16,7 +16,7 @@ description: >
 
 在 Windows 上从零装好、跑通、写出第一个主站程序，用这份 skill。
 
-只做 Windows。公开安装包是 Windows x64 一个 exe，Linux 未公开发布，**不要写 Linux 安装命令**。
+只做 Windows。公开安装包是 Windows x64 一个 exe，Linux 版规划中，**不要写 Linux 安装命令**。
 
 没写在这里、也没写在规则文件里的安装器参数、端口、接口，不要编。API 名称以
 [ai-prompts.txt](https://ethercat.darra.xyz/ai-prompts.txt) 为准，读不到就停，不要凭记忆补接口。

@@ -1,6 +1,6 @@
 {
   "name": "darra-ethercat-skills",
-  "description": "Darra EtherCAT Master agent skills: master programs, runtime install, verification, Windows path",
+  "description": "Darra EtherCAT Master agent skills: download, install, verify, commission, GUI, parameters, state-aware write-back, real-time, testing, troubleshooting, fast connect",
   "owner": {
     "name": "Darra Technology",
     "url": "https://ethercat.darra.xyz"
@@ -9,8 +9,8 @@
     {
       "name": "darra-ethercat-skill",
       "source": "./",
-      "description": "Write Darra EtherCAT master programs, install the Windows runtime, and verify a live bus",
-      "version": "1.1.0",
+      "description": "Take a Darra EtherCAT master from downloading the installer to a commissioned machine, and write your own master program against the SDK correctly. Every claim cites its source.",
+      "version": "1.2.0",
       "category": "engineering",
       "tags": ["ethercat", "industrial", "fieldbus", "windows", "plc"],
       "strict": false

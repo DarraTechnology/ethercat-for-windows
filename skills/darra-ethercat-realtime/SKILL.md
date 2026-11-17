@@ -125,7 +125,7 @@ var s = DarraEtherCAT.SoftRealtimeStatus;   // SoftRealtimeStatus
 两个必须讲清的区别：
 
 - **帧发送抖动 ≠ 应用抖动。** 前者是帧在总线上的发送时序（SDK 能直接读），后者是 PDO 数据到你程序里的时序偏差（SDK 没有直接属性，得自己量）。「总线抖动低、应用抖动高」= 你自己进程调度的问题。
-- **Linux RT 的 0.8 µs / 3.5 µs 是文档口径，Linux SDK 与驱动未发布。** 不要写成已发布能力。
+- **Linux RT 的 0.8 µs / 3.5 µs 是文档口径，Linux 版规划中，SDK 与驱动尚未发布。** 不要写成已发布能力。
 
 驱动保证的是 **PDO 帧在总线上的发送时序和 DC 同步质量，不承诺业务逻辑的硬实时**。
 
@@ -328,7 +328,7 @@ static void SampleRealtime(DarraEtherCAT master, int seconds = 30)
 - 「平均 1.2 µs / 最大 4.5 µs」+「以现场实测为准」+ 优化前后对照表 — `云端\ethercat-doc\docs\faq\stability.md`（判定口诀在 :49-53，对照表在 :63-69，结论在 :136）
 - 「帧发送抖动 平均 1.2μs / 最大 4.5μs」+「推荐 125µs 起步」— `docs\quick-start\preparation.md:34-35`
 - 「实际可达周期取决于 CPU、隔离配置、网卡与从站」— `docs\ethercat\overview.md:114`
-- Linux RT 0.8 / 3.5 µs 为「文档口径，未发布」— `static\ai\performance-benchmarks.txt:11-20`、`docs\ethercat\prerequisites.md:41`
+- Linux RT 0.8 / 3.5 µs 为「文档口径，Linux 版规划中」— `static\ai\performance-benchmarks.txt:11-20`、`docs\ethercat\prerequisites.md:41`
 - 「驱动保证的是 PDO 帧在总线上的发送时序和 DC 同步质量，不承诺业务逻辑的硬实时」— `static\ai\darraRT-driver.txt:67`
 - `LoopCycle` 默认 1 ms、推荐 125 µs~4 ms、31 µs 下限 — `docs\sdk\csharp\master\config.md:73-75,804`；Python/Java 页同口径
 

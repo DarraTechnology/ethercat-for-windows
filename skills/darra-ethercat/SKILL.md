@@ -57,7 +57,7 @@ https://download.darra.xyz/ethercat/client/Darra-EtherCAT-Setup.exe
 
 静默安装只用安装包自己的参数：`--silent --install` 或 `--silent --uninstall`，可选 `--path DIR`、`--no-rt-optimize`、`--rt-masters 1..4`。`--rt-masters` 缺值、不是整数或超出 1 到 4，直接失败，不要改成 1。
 
-公开安装包是 Windows 的。Linux 未公开发布，不要写 Linux 安装命令。
+公开安装包是 Windows 的。Linux 版规划中，尚未发布，不要写 Linux 安装命令。
 
 不建议在日常开发机上装这个包做实验。
 
