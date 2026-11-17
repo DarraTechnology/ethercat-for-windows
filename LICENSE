@@ -1,0 +1,23 @@
+Darra EtherCAT Skills — Proprietary License
+
+Copyright (c) 2024-2026 Darra. All rights reserved.
+
+These skill files ("the Skills") are proprietary material of Darra.
+
+Permission is granted to use, copy, and redistribute the Skills unmodified, in
+whole or in part, as part of using or evaluating Darra EtherCAT Master,
+including by embedding them in AI agents, IDE assistants, and internal tooling.
+
+You may not:
+
+1. Modify the Skills and redistribute the modified versions, under this name or
+   any other.
+2. Sell, sublicense, or otherwise commercially distribute the Skills as a
+   standalone product or as part of a competing product.
+3. Remove or alter this notice.
+
+The Skills are provided "as is", without warranty of any kind, express or
+implied. Darra is not liable for any direct or indirect damages arising from
+their use.
+
+For commercial licensing, contact Darra: support@darra.xyz

@@ -1,0 +1,4 @@
+# Keep every file byte-identical across platforms.
+# The skills are verified against their source copies by SHA256, so no
+# end-of-line conversion is allowed on checkout or commit.
+* -text
