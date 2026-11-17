@@ -41,7 +41,7 @@ SDK 包：
 - Python：`pip install darra-ethercat-master`（Python 3.12，64 位）。`from darra_ethercat import EtherCATMaster, EcState`
 - C：`darra_ethercat_c-win-x64.zip`，`#include "ethercat.h"`
 - C++：`darra_ethercat_cpp-win-x64.zip`，`#include "ethercat.hpp"`，C++17
-- Rust：`darra-ethercat-master.crate`，不在 crates.io。解出后用 path 依赖。Rust 1.70+
+- Rust：`cargo add darra-ethercat-master`（包在 crates.io 上）。离线用下载页的 `darra-ethercat-master.crate` 解出后走 path 依赖。Rust 1.70+
 
 语言包地址在下载页，不要另造链接。
 
@@ -51,7 +51,7 @@ https://download.darra.xyz/ethercat/client/Darra-EtherCAT-Setup.exe
 
 说明页：https://ethercat.darra.xyz/doc/downloads
 
-已装过旧版：先卸载，重启，再装新版。装完建议再重启一次。不要跳步。
+升级直接覆盖安装：装没装过旧版都用同一条 `--silent --install`，不需要先卸载旧版。安装器按驱动状态自动处理已装版本（先停旧驱动，再删旧驱动与旧程序文件，然后装本次版本）。卸载是独立动作，只在用户明确要卸掉时执行 `--silent --uninstall`。
 
 静默安装只用安装包自己的参数：`--silent --install` 或 `--silent --uninstall`，可选 `--path DIR`、`--no-rt-optimize`、`--rt-masters 1..4`。`--rt-masters` 缺值、不是整数或超出 1 到 4，直接失败，不要改成 1。
 

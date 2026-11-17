@@ -11,7 +11,7 @@ system prompt for a session that will touch EtherCAT. Simplest, but costs contex
 the skill is not used.
 
 **2. On-demand file read (recommended).** Give the agent a file-read tool scoped to this
-repository and tell it the three paths. It reads the matching `SKILL.md` only when the
+repository and tell it the four paths. It reads the matching `SKILL.md` only when the
 request calls for it. Costs nothing until used, and the agent always sees the current text.
 
 **3. Router on the description.** Parse the `description` field of each file and match
@@ -45,6 +45,7 @@ Inject the matched file as a tool result or a system message.
 
 | Skill | Tools it needs |
 |---|---|
+| `darra-ethercat-windows` | HTTP GET (docs), file write, shell (run the installer, then `Get-Service` / `Get-AuthenticodeSignature`) — install steps user-gated |
 | `darra-ethercat` | HTTP GET (docs), file write (the program it generates) |
 | `darra-runtime-install` | HTTP GET + SHA256 (download and check), shell (run the installer) — user-gated |
 | `darra-verify` | file write, shell (`dotnet new` / `add package` / `run`) |

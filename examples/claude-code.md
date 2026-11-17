@@ -9,18 +9,20 @@ Personal — available in every project you open:
 
 ```bash
 mkdir -p ~/.claude/skills
-cp -r skills/darra-ethercat        ~/.claude/skills/
-cp -r skills/darra-runtime-install ~/.claude/skills/
-cp -r skills/darra-verify          ~/.claude/skills/
+cp -r skills/darra-ethercat-windows  ~/.claude/skills/
+cp -r skills/darra-ethercat          ~/.claude/skills/
+cp -r skills/darra-runtime-install   ~/.claude/skills/
+cp -r skills/darra-verify            ~/.claude/skills/
 ```
 
 Project-scoped — checked in with the repository so every teammate gets it:
 
 ```bash
 mkdir -p .claude/skills
-cp -r /path/to/ethercat-skill/skills/darra-ethercat        .claude/skills/
-cp -r /path/to/ethercat-skill/skills/darra-runtime-install .claude/skills/
-cp -r /path/to/ethercat-skill/skills/darra-verify          .claude/skills/
+cp -r /path/to/ethercat-skill/skills/darra-ethercat-windows  .claude/skills/
+cp -r /path/to/ethercat-skill/skills/darra-ethercat          .claude/skills/
+cp -r /path/to/ethercat-skill/skills/darra-runtime-install   .claude/skills/
+cp -r /path/to/ethercat-skill/skills/darra-verify            .claude/skills/
 ```
 
 The layout inside each directory must stay exactly `skills/<name>/SKILL.md` — Claude Code
@@ -32,13 +34,16 @@ Start a new session after copying. The skills appear in the session's skill list
 
 - **Let it route itself** — the `description` field lists the trigger words. "Write me a C#
   master program that scans slaves and enters OP" pulls in `darra-ethercat`.
-- **Ask for one by name** — `/darra-ethercat`, `/darra-runtime-install`, `/darra-verify`, or
-  "use darra-verify on this machine".
+- **Ask for one by name** — `/darra-ethercat-windows`, `/darra-ethercat`, `/darra-runtime-install`,
+  `/darra-verify`, or "use darra-verify on this machine".
 
 ## What happens on disk
 
 The agent only reads text. The skills never install anything by themselves:
 
+- `darra-ethercat-windows` covers the whole Windows path end to end: install, confirm it is alive,
+  write the first master program, and read a scan verdict. Its install and verify steps defer to the
+  two skills below.
 - `darra-ethercat` produces code. It will tell the agent to read
   <https://ethercat.darra.xyz/ai-prompts.txt> before writing any API call.
 - `darra-runtime-install` has the agent **ask you first**, then run the official installer

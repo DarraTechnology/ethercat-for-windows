@@ -19,7 +19,7 @@ description: >
 
 ## 1. 先确认前提
 
-- 已经装好 Darra EtherCAT 运行时。没装先回去走安装技能：https://ethercat.darra.xyz/skills/darra-runtime-install/SKILL.md
+- 已经装好 Darra EtherCAT 运行时。没装先回去走安装技能：[`darra-runtime-install`](../darra-runtime-install/SKILL.md)
 - Windows x64，管理员权限（SDK 的环境要求就是管理员，普通权限跑不出可信结果）。
 - 机器上有没有从站都行。**没有从站也是有效结论**，不需要为了"验证"去接设备。
 
