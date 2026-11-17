@@ -2,12 +2,12 @@
 name: darra-ethercat-windows
 description: >
   在 Windows 上把 Darra EtherCAT 装好、跑通、写第一个主站程序的专用技能。一个官方安装包同时装
-  实时运行时 + 内核驱动 + GUI + 六语言 SDK；静默安装/升级/卸载命令与退出码（3010 = 成功待重启）、
-  升级直接覆盖安装、装后确认活着（DarraRTEth 服务 + 驱动签名 + 扫一遍总线）、C# 主站最小可跑程序与
+  实时运行时 + 驱动 + GUI + 六语言 SDK；静默安装/升级/卸载命令与退出码（3010 = 成功待重启）、
+  升级直接覆盖安装、装后确认活着（服务在跑 + 安装包签名有效 + 扫一遍总线）、C# 主站最小可跑程序与
   六语言入口差异、Windows 专属坑（主站独占网口需 Close 归还、驱动换入要重启、三个扫描入口怎么选）、
   以及怎么区分「没量到」和「实测空口」。
   触发词：Windows、装包、安装、装驱动、静默安装、silent install、卸载、重装、升级、3010、需要重启、
-  --rt-masters、--path、--no-rt-optimize、DarraRTEth、驱动签名、装完怎么确认、写主站程序、
+  --rt-masters、--path、--no-rt-optimize、装完怎么确认、写主站程序、
   QuickScan、ScanSlaves、QuickSlaveCount、StandardScan、绑定网卡、专用口、网口不归还、
   扫不到从站、没量到、空口、三态。
 ---
@@ -36,11 +36,11 @@ description: >
 | 装到什么 | 是什么 | 落点 |
 |---|---|---|
 | 实时运行时 | DarraRT 实时驱动配套的运行环境 | 安装目录 |
-| 内核驱动 | `DarraRT_Eth.sys`（NDIS 协议驱动） | `C:\Windows\System32\drivers\` |
+| 驱动 | 随安装包自动安装，无需单独获取 | 由安装器决定 |
 | GUI | Darra EtherCAT Master 配置与调试工具 | 开始菜单 |
 | 六语言 SDK | C# / C / C++ / Python / Java / Rust | `<安装目录>\SDK\`（默认 `C:\DARRA\EtherCAT_Master\SDK\`） |
 
-**不要单独下驱动、不要自己拷 sys、不要手动 netcfg 绑卡。** 驱动的安装与绑定只走安装器。
+**不要单独下载驱动、不要手工拷贝驱动文件、不要手工绑定网卡。** 驱动的安装与绑定只走安装器。
 
 系统要求：
 
@@ -130,22 +130,21 @@ https://download.darra.xyz/ethercat/client/Darra-EtherCAT-Setup.exe.sha256   ←
 ## 3. 装完怎么确认活着
 
 按顺序过一遍，四条都过才算装好。前三条是本机状态，第四条是总线。
+要逐层判据（L0 安装事实 → L1 SDK 就位 → L2 能加载 → L3 网卡 → L4 扫总线 → L5 可选进 OP），
+跑 [`darra-verify`](../darra-verify/SKILL.md)。
 
-**① 服务在跑**
+**① 安装器退出码是成功码**
+
+`0` 或 `3010`。`3010` = 已成功、**重启后**生效，先重启再往下看。
+
+驱动随安装包一并安装，程序启动后自动接入。产品**不以「某个 Windows 服务在跑」作为判据**，
+也不要自己发明 `Get-Service` / `sc query` 之类的检查 —— 驱动缺失时程序会把结论写进日志，
+主站初始化会如实失败，那才是判据。
+
+**② 安装包签了名**
 
 ```powershell
-Get-Service DarraRTEth
-```
-
-期望 `Status = Running`。服务名、NDIS 协议名、驱动组件名都是 `DarraRTEth`（驱动文件是
-`C:\Windows\System32\drivers\DarraRT_Eth.sys`，文件名里那个下划线是刻意的，别当成两个东西）。
-
-服务不在 / 起不来 → 先看退出码和安装日志，别急着重装。
-
-**② 驱动签了名**
-
-```powershell
-Get-AuthenticodeSignature C:\Windows\System32\drivers\DarraRT_Eth.sys |
+Get-AuthenticodeSignature .\Darra-EtherCAT-Setup.exe |
     Select-Object Status, SignerCertificate
 ```
 
@@ -239,10 +238,11 @@ C# 聚合表 `GetNetworkAdapters()` / `QuickScan()` / `StandardScan()` 只有 C#
 2. 订阅事件
 3. 设周期、配 DC（CSP / CSV / CST 必须在 `SetState(OP)` **之前**配 DC）
 4. `SetState(OP)`
-5. `InitializePdoOffsets()`，再设操作模式
-6. `Enable()` 一次（**进 OP 之后**才调）
-7. 在 `ProcessDataCyclicSync` 周期回调里写 PDO
-8. `master.Close()`
+5. `Start()` 起 PDO 周期（Python / Java / C / C++ / Rust 必调；C# 可省，幂等）
+6. `InitializePdoOffsets()`，再设操作模式
+7. `Enable()` 一次（**进 OP 之后**才调）
+8. 在 `ProcessDataCyclicSync` 周期回调里写 PDO
+9. `master.Close()`
 
 回调里只读写 PDO，不做 SDO / Sleep / 文件 / 界面刷新 / 等锁。事件不在 UI 线程：
 WinForms 用 `Invoke` / `BeginInvoke`，WPF 用 `Dispatcher`。更多 API 细则见
@@ -352,7 +352,7 @@ foreach (var row in DarraEtherCAT.QuickScan())
 - 把 3010 当失败、反复重装、或自动重启机器。
 - 按版本号拼安装包文件名；自己发明参数（`--repair` 不存在）；给 `--rt-masters` 补默认值。
 - 在日常开发机上装这个包做实验。
-- 手动拷 `.sys`、手动 netcfg 绑卡、手动改驱动绑定 —— 装驱动只走官方安装包。
+- 手工拷贝驱动文件、手工绑定网卡、手工改绑定关系 —— 装驱动只走官方安装包。
 - 不调 `master.Close()`，或在退出路径上漏掉它。
 - 用作 EtherCAT 主口的网卡同时上网 / 桥接 / 共享。
 - `Build().Master` 不检查 `result.Success`；`EcState` 写成 `Operational` / `Run`（C#）。

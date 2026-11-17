@@ -94,9 +94,18 @@ Darra-EtherCAT-Setup.exe --silent --uninstall
 
 ## 6. 装完怎么验证
 
-- 重启后打开 Darra EtherCAT Master 配置工具，能正常扫描从站，说明运行时已经就位。步骤见 https://ethercat.darra.xyz/doc/quick-start/preparation
-- 用 SDK 的话，按 SDK 文档读主站状态、进 OP（例如 C# 的 `master.SetState(EcState.OP, out err)` 返回成功）。以 SDK 文档为准：https://ethercat.darra.xyz/doc/sdk/csharp/master/diagnostics
-- 验证不通过先看退出码和日志，不要靠反复重装解决。
+分两层：先确认「装进去了」，再确认「跑得起来」。
+
+**装进去了**：退出码是 `0` 或 `3010`，安装目录下 `SDK\SDK_CSharp\DarraEtherCAT.dll` 等文件在。
+**`3010` 没重启之前不要做任何功能验证** —— 那一步测到的是旧驱动 / 旧文件。
+
+**跑得起来**，按从轻到重：
+
+- 打开 Darra EtherCAT Master 配置工具，能正常扫描从站。步骤见 https://ethercat.darra.xyz/doc/quick-start/preparation
+- 用 SDK 读主站状态、进 OP（例如 C# 的 `master.SetState(EcState.OP, out err)` 返回成功）。以 SDK 文档为准：https://ethercat.darra.xyz/doc/sdk/csharp/master/diagnostics
+- 想要逐层判据和一段机器可读结论，跑 [`darra-verify`](../darra-verify/SKILL.md) 的 L0–L5。
+
+验证不通过先看退出码和日志，不要靠反复重装解决。
 
 ## 7. 不要做的事
 

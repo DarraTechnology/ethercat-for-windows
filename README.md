@@ -1,6 +1,6 @@
 # Darra EtherCAT Skills
 
-Agent skills for **Darra EtherCAT Master**: write master programs, install the runtime, verify a live bus, and get the whole thing running on Windows.
+Agent skills for **Darra EtherCAT Master**: install the runtime on Windows, write master programs in six languages, verify a live bus, and confirm an install is actually alive.
 
 These are plain Markdown instruction files. There is no build step and nothing to compile — an agent reads the relevant `SKILL.md` and follows it.
 
@@ -12,10 +12,10 @@ These are plain Markdown instruction files. There is no build step and nothing t
 
 | Skill | What it solves | Reach for it when |
 |---|---|---|
-| [`darra-ethercat-windows`](skills/darra-ethercat-windows/SKILL.md) | The end-to-end Windows path: one official installer brings the real-time runtime, kernel driver, GUI and six-language SDK; silent install / upgrade / uninstall with exit codes; confirming it is alive afterwards; a first C# master program with the six-language entry differences; Windows-specific traps (the master owns its NIC until `Close()`, driver swaps land at next boot, which of `QuickScan` / `QuickSlaveCount` / `ScanSlaves` to use); and how to tell "not measured" apart from "measured empty bus". | The work is on Windows, or someone asks "how do I install and get a program running?". |
-| [`darra-ethercat`](skills/darra-ethercat/SKILL.md) | Writing master programs in C#, Java, Python, C, C++, or Rust: DENI configuration, build/init order, the state machine up to OP, PDO struct mapping, SDO, CiA 402 servo control, DC. | The task is to write or review master-side code. |
+| [`darra-ethercat`](skills/darra-ethercat/SKILL.md) | Writing master programs in C#, Python, Java, C, C++, or Rust: DENI configuration, build/init order, the state machine up to OP, PDO struct mapping, SDO, CiA 402 servo control, DC, cycle timing. Ships a **complete runnable C# program and a complete runnable Python program** (select NIC → build → OP → cyclic callback → SDO → Close), plus a six-language entry-point comparison table. | The task is to write or review master-side code. |
+| [`darra-ethercat-windows`](skills/darra-ethercat-windows/SKILL.md) | Windows end-to-end: one installer covers runtime + driver + GUI + six SDKs; silent install/upgrade/uninstall and exit codes, post-install alive check, first master program, Windows-specific traps (exclusive NIC, driver swap needs reboot, which of the three scan entries to use), and the three-state scan verdict. | Someone is on Windows and needs the whole path from installer to first running master. |
 | [`darra-runtime-install`](skills/darra-runtime-install/SKILL.md) | Downloading and silently installing the runtime: fixed download URL, SHA256 check, silent install / uninstall, exit-code interpretation (3010 = success, reboot pending), upgrade-in-place semantics, and the "never auto-reboot, never install without confirmation" boundary. | The machine needs the runtime, or an install / upgrade / uninstall question comes up. |
-| [`darra-verify`](skills/darra-verify/SKILL.md) | Proving the SDK actually works after install: build a small C# console app, enumerate adapters, quick-scan each port, emit machine-readable JSON with a three-state scan verdict. | Someone asks "did it install correctly?" or "why does it scan nothing?". |
+| [`darra-verify`](skills/darra-verify/SKILL.md) | Proving the install is actually alive, in six layers: L0 installer exit code → L1 SDK files → L2 SDK loads → L3 adapters enumerate → L4 bus scan (strict three-state) → L5 optional: reach OP and read `0x1018:01`. Emits machine-readable JSON. | Someone asks "did it install correctly?" or "why does it scan nothing?". |
 
 ## How to use
 
@@ -65,9 +65,11 @@ API names, initialization order, state-machine semantics, PDO mapping, SDO rules
 
 ## What these skills do not claim
 
-`darra-verify` proves three things: the SDK loads, the adapters enumerate, and the scan verdict is one of three states — `null` = not measured, `0` = measured empty bus, `N > 0` = measured N slaves.
+`darra-verify` runs L0–L4 without any slave attached: the installer exit code was a success code, the SDK files are present, the SDK loads, the adapters enumerate, and the scan verdict is one of three states — `null` = not measured, `0` = measured empty bus, `N > 0` = measured N slaves.
 
-It does not prove real-time performance, and it does not prove that slaves reach OP. Neither does anything else in this repository.
+L5 is optional and needs a `config.deni` plus real slaves; when it passes it adds exactly two facts — the master reached OP, and `0x1018:01` reads from a slave.
+
+Nothing in this repository proves real-time performance, jitter, or long-run stability.
 
 ## License
 
