@@ -41,7 +41,7 @@ description: >
 
 注意三件事：
 
-- `--no-rt-optimize` 会跳过本次实时优化，**不会有这次核预留**（除非机器之前已经配过）。除非你明确知道自己在做什么，不要带这个开关。
+- 实时优化由安装器执行，**不可关闭**；核预留随安装过程完成。
 - 预留单位是**逻辑处理器**。开了超线程时，一个预留核可能和别的负载共享物理核 —— 这是安装器按逻辑处理器计数带来的，不是 bug，但高要求场合值得知道。
 - 安装包**不动网卡高级属性 / 中断亲和性**（拿不到已确认的网卡身份时保留现值）。所以「网卡中断跑到别的核」不是安装器留下的坑，是需要现场自己看的情况。
 
@@ -160,7 +160,7 @@ DENI 加载契约要求：DC 使能时，从站 SYNC0 周期非 0 **且与主站
 
 | 可能原因 | 判据（能从 SDK 读到的） | 怎么处理 |
 |---|---|---|
-| **隔离核没配** | `master.IsolationConfigured == false`；日志里有一条「未检测到 RT 核隔离」Warning | 用官方安装器重装，**不要**自己改系统；装的时候别带 `--no-rt-optimize` |
+| **隔离核没配** | `master.IsolationConfigured == false`；日志里有一条「未检测到 RT 核隔离」Warning | 用官方安装器重装，**不要**自己改系统；实时优化由安装器执行，不可关闭 |
 | **配了隔离但本会话没进去** | `IsolationConfigured == true` 且 `HardRealtimeActive == false` 且周期已在跑；`RtAlarmMessage` 有中文报警 | 这是要报的问题，不是「调一调就好」。看 `AlarmMessage` 里的 mask / core / jitter 字段 |
 | **PDO 线程没绑上预留核** | `DarraEtherCAT.SoftRealtimeStatus.PdoCore == -1`，或 `ThreadPriorityApplied == false`；`master.PinCore == -1` | 看 `SoftRealtimeStatus.Reason`；确认安装器确实预留了核（`ReservedCoreCount > 0`） |
 | **预留核被别的实时任务占了** | 平均抖动整体偏高，`RtPreemptCount` 持续增长 | 同一台机器上不要跑第二个吃实时核的程序；一个核只给一个主站 |
@@ -264,7 +264,6 @@ static void SampleRealtime(DarraEtherCAT master, int seconds = 30)
 - **不要用非实时线程驱动决定时序的业务逻辑再指望它准点。** UI 线程、普通线程池线程都不保证调度；要确定性就把时序逻辑放在周期路径上，只做轻量计算。
 - **不要自己写系统调优代码**（改电源计划、改引导参数、绑网卡、提权改注册表）。这些是安装器的职责；SDK 只提供只读校验。
 - **不要自己包一层重试去「修」实时问题**。抖动大是物理/配置问题，重试修不了，只会掩盖。
-- **不要用 `--no-rt-optimize` 装完再抱怨抖动大。**
 - **不要把 `KtimerWakeOverrunCount` 当成「丢了多少帧」报给客户。**
 
 ## 8. 边界：这不是实时问题
@@ -335,7 +334,7 @@ static void SampleRealtime(DarraEtherCAT master, int seconds = 30)
 
 **安装器**
 
-- `--rt-masters` / `--no-rt-optimize` 与退出码 1639 — `云端\ethercat-doc\docs\downloads.md:47-71`
+- `--rt-masters` 与退出码 1639 — `云端\ethercat-doc\docs\downloads.md:47-71`
 - 核预留规则（N 主站 = 最高 N 个逻辑处理器，给 Windows 留 2 核）— `安装包\Services\RtOptimizationCore.cs:1201-1241`
 - 电源计划切「卓越性能」否则「高性能」— `安装包\Services\RtOptimizationCore.cs:290-302`
 - 电源细项（CPU 100% / 禁 C-State / 核心停泊 / PCIe ASPM / USB 选择性挂起）— `安装包\Services\RtOptimizationCore.cs:361-370`
