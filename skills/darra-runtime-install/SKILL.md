@@ -36,8 +36,9 @@ description: >
 | 校验文件直链 | `https://download.darra.xyz/ethercat/client/Darra-EtherCAT-Setup.exe.sha256` | 不要 |
 
 - 公开直链不登录、不带 Token 也能下（2026-11-18 实测 200）。
-- `https://ethercat.darra.xyz/downloads` 是 **404**，没有这一页；正确地址带 `/doc/`。
-- 包大小：**728,333,928 字节**（约 694.6 MiB）。
+- `https://ethercat.darra.xyz/downloads` 是 **301**，跳到 `https://ethercat.darra.xyz/doc/downloads/`，不是 404；脚本直接用带 `/doc/` 的地址。
+- 包大小：**735,489,640 字节**（约 701.4 MiB，2026-11-18 01:50 UTC 重打包）。**只做当天参考** ——
+  每次下载前用 HEAD 取 `Content-Length` 作为期望值，别把 735,489,640 写死进脚本。
 - 当前发布版本：**2.13.16**（2026-11-17）。这个数字会变，**以官网下载页表格为准**。
 - 文件名固定是 `Darra-EtherCAT-Setup.exe`，**不带版本号**。不要拼 `Darra-EtherCAT-Setup-2.13.16.exe` 这种名字 —— 公开下载位没有它，拼出来是 404。
 
@@ -70,7 +71,7 @@ $bytes    = (Get-Item $o).Length
 
 判断链，按顺序走：
 
-1. **字节数不对**（≠ 728,333,928）→ 没下完或被截断，`-C -` 续传或重下。不要拿去装。
+1. **字节数不对**（≠ 本次 HEAD 的 `Content-Length`；2026-11-18 快照 735,489,640）→ 没下完或被截断，`-C -` 续传或重下。不要拿去装。
 2. **字节数对、哈希不对** → 删掉重下（`Remove-Item $o`）。续传可能拼了两个不同版本，续传救不了。
 3. **重下两次还不对** → 停手。把 `expected` / `actual` / 字节数 / URL 一起给用户。这通常是代理改写了响应，或拿到了内网缓存的旧件。
 4. **别人给的离线副本** → 一样过这条哈希。来源不重要，哈希不对就是不能用。
@@ -119,9 +120,12 @@ Get-NetAdapter -Physical | Select-Object Name, InterfaceDescription, Status, Mac
 选中要跑总线的那张**物理有线网卡**（Intel / Realtek 这类），再看它上面绑了什么协议：
 
 ```powershell
-Get-NetAdapterBinding -Name '<上面选中的网卡名>' -ComponentType Protocol |
+Get-NetAdapterBinding -Name '<上面选中的网卡名>' |
   Select-Object DisplayName, ComponentID, Enabled
 ```
+
+（`Get-NetAdapterBinding` **没有 `-ComponentType` 参数**，Win10 19045 / PowerShell 5.1 上会直接报
+「找不到与参数名称 ComponentType 匹配的参数」。要看被隐藏的绑定项再加 `-AllBindings`。）
 
 要求：
 
@@ -172,6 +176,11 @@ Get-NetAdapterBinding -Name '<上面选中的网卡名>' -ComponentType Protocol
 `--rt-masters` 只收 1 到 4 的整数。缺值、不是整数、超出范围，安装器**直接失败**（退出码 1639），不会用默认值兜底。不要把它改成 1 再试，先跟用户确认要几个。
 
 没有 `--repair`（加了会被拒）；`--resume` 不是对外参数（那是安装器自己重启后收尾用的）。**别编参数。**
+
+> **实测（2026-11-18，2.13.16）：未知开关不会被拒绝。** `--silent --install --no-such-flag` 会被当成正常安装
+> 执行完（退出码 `3010`，真的重装了一遍）。也就是说拼错开关**不会有 1639 报错**，只会静默按有效参数安装。
+> 1639 只覆盖「已知参数但值不合法」（`--rt-masters` 缺值/非整数/越界、`--repair`）。
+> 所以每条命令都要逐字对照本节，不能靠退出码发现拼写错误。
 
 ### 退出码
 
@@ -313,13 +322,13 @@ Get-ChildItem 'C:\DARRA\EtherCAT_Master\SDK\SDK_C' -Directory | Select-Object -E
 | 项 | 实测值 |
 |---|---|
 | 直链 HTTP | `200`，`application/octet-stream`，`Accept-Ranges: bytes` |
-| 字节数 | `728,333,928` |
-| 下载耗时 | `35 s`（约 `19.9 MB/s`） |
-| SHA256 前 16 位 | `0B0CC70C9E358D90…` |
-| 实测 SHA256 | `0B0CC70C9E358D90B7FC9DF6BEF6637EDD4619362866FBB0210590CDE9FCCCA9` |
-| `.sha256` 直链 | 与实测一致 |
+| 字节数 | `735,489,640`（2026-11-18 01:50 UTC 重打包后的当天值） |
+| 下载耗时 | 发布当天 `35 s`（约 `19.9 MB/s`）；同日下午复测链路中途停滞，速度随出口波动 |
+| SHA256 前 16 位 | `B317985FBE4D41DC…` |
+| 实测 SHA256 | `B317985FBE4D41DC1AA3BCFED5706474B26232CA61F1B7E5496310C6D369D63D` |
+| `.sha256` 直链 | `b317985f…d369d63d`，与磁盘上官方安装包实测哈希一致 |
 | 包内版本证据 | 文件版本 `2.13.16.0`；包内清单含 `SDK\SDK_CSharp\Darra.EtherCAT.Master.2.13.16.nupkg`、`darra_ethercat_c-2.13.16-win-x64` |
-| 哈希计算耗时 | `1.2 s`（728 MB） |
+| 哈希计算耗时 | `1.1 s`（735 MB） |
 
 **装机后的目录与版本（同一台测试机上已装的 2.13.16）**
 
@@ -333,5 +342,10 @@ Get-ChildItem 'C:\DARRA\EtherCAT_Master\SDK\SDK_C' -Directory | Select-Object -E
 | 日志 | `events.log` / `core.log` / `startup_trace.log` / `crash_log.txt` |
 | 安装占用 | `0.91 GB` / `371` 个文件（`C:\DARRA\EtherCAT_Master`） |
 | 系统要求实测 | Windows 10 19045 x64、管理员、.NET Framework Release `533325`、VC++ 2015-2022 x64 均在位 |
+| 安装退出码实测 | `%ProgramData%\Darra\EtherCAT\install.log` 记录安装 `退出码: 3010 (操作成功, 重启后生效)`；卸载 `退出码: 0 (成功)` |
+| 参数校验实测 | `--rt-masters 9` / `--rt-masters`（缺值）/ `--repair` 均返回 `1639`，未执行任何安装动作 |
+| 未知开关实测 | `--silent --install --no-such-flag` **不报错**，正常安装并以 `3010` 结束 |
 
-> 本技能体这次**没有**在测试机上执行卸载 / 重装 —— 那会破坏测试机上的驱动与授权状态。安装、卸载、升级的退出码语义以官方下载页的命令行说明为准，本文只照抄，不改写。
+> 退出码不是照抄文档：`0` / `3010` 来自测试机 `%ProgramData%\Darra\EtherCAT\install.log` 的真实记录
+> （2026-11-18 09:06 卸载 → `0`；09:08 安装 → `3010`），`1639` 与「未知开关被忽略」是当天对同一安装包的实跑结果。
+> 其余码（1602 / 1603 / 1604 / 1618 / 1622）本次没有构造出对应场景，语义以官方下载页的命令行说明为准，本文只照抄，不改写。

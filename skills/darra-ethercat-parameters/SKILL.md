@@ -180,6 +180,11 @@ var  od      = slave.CoE.PeekOdList();                  // 窥探，不触发加
 slave.CoE.ClearOdCache();                               // 清目录 + 全部缓存
 ```
 
+> 实测（2.13.16，Ezi/HCFA 台架）：`preferEsi:true` 且没有匹配的 ESI 时，`LoadODListAsync` 可能**正常返回**
+> 但 `IsOdListLoaded=false`、`PeekOdList()` 为 `null` —— 判成败只能看 `IsOdListLoaded` / `od == null`，不能看
+> 「Task 完成了」。同一台架 `preferEsi:false` 实测加载到 116 个对象、耗时 26.6 s，随后
+> `od[0x1018].OEList[0x01].TryGetBytes(...)` 读到 4 字节。
+
 ```python
 # Python：prefer_esi 默认 True，失败返回 None（空表也算失败）
 od = slave.coe.load_od_list()                    # 稳定入口，空表会自动重试一次

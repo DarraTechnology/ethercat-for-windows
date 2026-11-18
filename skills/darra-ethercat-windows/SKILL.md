@@ -89,6 +89,10 @@ https://download.darra.xyz/ethercat/client/Darra-EtherCAT-Setup.exe.sha256   ←
 
 参数只有这几个，**没有 `--repair`**（加了会被拒），也没有对外的 `--resume`（那是安装器重启后自己收尾用的）：
 
+> **实测（2026-11-18 / 2.13.16）：未知开关不会被拒绝。** `--silent --install --no-such-flag` 会照常执行安装
+> 并以 `3010` 结束 —— 拼错开关不会报 1639，只会静默按有效参数装上。1639 只覆盖「已知参数但值不合法」
+> （`--rt-masters` 缺值/非整数/越界、`--repair`）。所以命令要逐字对照本表，不能靠退出码发现拼写错误。
+
 | 参数 | 含义 |
 |---|---|
 | `--silent --install` | 静默安装 / 升级 |
@@ -262,7 +266,8 @@ WinForms 用 `Invoke` / `BeginInvoke`，WPF 用 `Dispatcher`。更多 API 细则
 
 **用作 EtherCAT 主口的那块网卡是专用口**：它跑的是 EtherCAT 帧，不要同时拿它上网、开共享、
 做桥接或当普通网口用。要联网另接一块网卡。选卡只认物理有线 802.3（`EtherCatCapable = true`）；
-虚拟网卡 / 无线 / 黑名单口不能当主口，扫描会给 `Unsupported`。
+无线 / 虚拟 / 黑名单口**通常根本不出现在 `GetNetworkAdapters()` / `QuickScan()` 的清单里**
+（实测机器上有一张 WLAN，清单里没有它）；如果出现了，它的 `EtherCatCapable` 为 `false`、快扫给 `Unsupported`。
 
 绑定状态（`BoundProtocol`）由官方安装器配置，**不要自己手绑 / 手解协议**。
 
@@ -368,17 +373,24 @@ WinForms 用 `Invoke` / `BeginInvoke`，WPF 用 `Dispatcher`。更多 API 细则
 全都是 `NotMeasured` / `OccupiedByMaster` / `NotScanned` / `Unsupported` / `Aborted` / `Failed`、
 一个 `EmptyBus` 都没有时，就是**没量到**。按 `State` 和 `NativeCode` 把原因说清楚，别猜从站。
 
+> 实测提醒（2.13.16）：**链路 Down 的网口也可能被快扫报成 `EmptyBus` + `SlaveCount=0`**（同一张卡
+> `GetNetworkAdapters()` 的 `LinkStatus=Down`、`QuickSlaveCount` 返回负码）。判「实测空口」前先确认
+> 该口 `LinkStatus == Up`；Down 的口一律按「没量到」说。
+
 反过来，一个可复用的自检片段（逐口三态）：
 
 ```csharp
 foreach (var row in DarraEtherCAT.QuickScan())
 {
-    string verdict = row.State == NicScanState.HasSlaves ? $"{row.SlaveCount} 站"
-                   : row.State == NicScanState.EmptyBus ? "实测空口"
+    string verdict = row.State == DarraEtherCAT.NicScanState.HasSlaves ? $"{row.SlaveCount} 站"
+                   : row.State == DarraEtherCAT.NicScanState.EmptyBus ? "实测空口"
                    : $"没量到（{row.State}, 码 {row.NativeCode}）";
     Console.WriteLine($"{row.Name}: {verdict}");
 }
 ```
+
+`NicScanState` 是 `DarraEtherCAT` 的**嵌套枚举**，代码里必须写全名 `DarraEtherCAT.NicScanState`，
+只写 `NicScanState` 编译不过（CS0103）。同理 `ScanOutcome` 要写 `DarraEtherCAT.ScanOutcome`。
 
 **这条路径证明不了的事**：实时性能、抖动、硬实时、从站能不能进 OP。别顺着往下说。
 
@@ -392,6 +404,7 @@ foreach (var row in DarraEtherCAT.QuickScan())
 - 在日常开发机上装这个包做实验。
 - 手工拷贝驱动文件、手工绑定网卡、手工改绑定关系 —— 装驱动只走官方安装包。
 - 不调 `master.Close()`，或在退出路径上漏掉它。
+- 有 DENI 时又调 `SetNetwork(...)` —— DENI 已带网口，实测 SetENI 后再 SetNetwork 会让 `SetState(OP)` 失败（AL `0x0017`）。
 - 用作 EtherCAT 主口的网卡同时上网 / 桥接 / 共享。
 - `Build().Master` 不检查 `result.Success`；`EcState` 写成 `Operational` / `Run`（C#）。
 - 把 `null` 当 0 站，或把「没量到」说成「没有从站」。

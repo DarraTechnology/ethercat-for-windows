@@ -117,37 +117,41 @@ description: >
 - **生效时机**：`applyTiming`，四选一：`immediate` / `nextBuild` / `nextCycle` / `nextTransition`。
 - **⚠** = 冻结契约的口径比原生写门更严，或该字段有「写了不生效」的已知事实，**必须看「注意」列**。
 
+> **本表已按 2.13.16 实测 `query:writable`（52 项）校正**（2026-11-18，`192.168.3.120`）。
+> 运行时仍以当次返回为准：命令是 `act:write;path=...;value=...`（GUI 命令通道），
+> 与 CLI 的 `--write <path>=<value>` 用同一套 `path` 字符串。
+
 ### 2.2 主站级
 
 | path | 类型/单位 | 允许状态 | 生效时机 | 改错的后果 | 回退办法 | 注意 / 源码判据 |
 |---|---|---|---|---|---|---|
-| `master.loopCycle` | uint / ns | `["INIT"]` ⚠ | `nextTransition` | 非整数微秒或超出 `[31,10000] µs` → 原生拒绝、保持原值；改小导致丢帧/掉 OP；与 DC 站 SYNC0 不成整数倍 → AL `0x001A/0x002D/0x0034` | 在同一个窗口写回原值；或改 DENI 重连 | ⚠ 原生写门实际是「全站 INIT/PRE_OP」（`config_common.c:17188` → `:1649`），契约对外只开 INIT。另：托管 setter 在**状态转换进行中会直接跳过**并打 warning（`CSharp\Master\Core.cs:1793-1797`），所以「写了没反应」先看是不是正在转换。判据：`Core.cs:1756-1832`、`config_common.c:17142-17260`、`diagnostics.c:3962,3965` |
-| `master.dcCycle` | uint / ns | `["INIT","PRE_OP"]` | `nextTransition` | 换 DC 时基会让所有 DC 站的 SYNC0 参考重算；DC 已武装时换 → 全环同步抖/掉 OP | 写回原值（同样要在未武装窗口） | native 拒绝条件：0 ns 无意义、>10 ms 超内核 RT 上限、**DC 已武装或无法证明未武装**时拒绝且保持原值（`CSharp\Master\Core.cs:1835-1867`，门在 `config_common.c:17026`） |
-| `master.timeout.initToPreOp` | int / ms | `["ANY"]` | `nextTransition` | 改太小 → 慢从站被误判超时，转换失败；`0` = **不超时**（等于关掉保护，卡死也回不来） | 写回默认（ETG 默认 3000） | 只在**升级方向**被读取（`core\state\state_machine.c:6023`）；上限被钳到 30 min（`:6030-6036`）。负值在托管层直接抛 `ArgumentOutOfRangeException`（`MasterConfig.cs:467-469`） |
-| `master.timeout.preOpToSafeOp` | int / ms | `["ANY"]` | `nextTransition` | 同上；这个窗口要写启动 SDO + PDO 映射，太短会「配置写一半超时」 | 写回默认（10000） | `MasterConfig.cs:487-513`；`state_machine.c:6024` |
-| `master.timeout.safeOpToOp` | int / ms | `["ANY"]` | `nextTransition` | 太短 → DC PLL 还没锁就被判失败；太长 → 故障恢复慢 | 写回默认（5000） | `MasterConfig.cs:519-545`；`state_machine.c:6025` |
-| `master.processDataWatchdogMs` | uint / ms | `["ANY"]` | `nextTransition` | **低于拓扑安全下限会被抬高**（分支站 5000 / 环上 PDO 站 400），实际下发 ≠ 请求；太大 → 从站掉线后迟迟不报；`0` = 用从站默认 | 写回原值，或按读回的实际值调整上层超时判断 | 写入只是存进共享内存，**真正下发在进 OP / 热插拔恢复时逐站写寄存器**（`MasterConfig.cs:375-410`；`core\base\events.c:25589,25874`；`config_startup.c:16660-16705`）。`>6553` 托管层直接抛（`MasterConfig.cs:397-398`） |
-| `master.pdiWatchdogMs` | int / ms | `["ANY"]` | `nextTransition` | 设太大 → 从站主站断连后仍继续输出；设太小 → 正常抖动也触发 | 写回原值 | 同上；默认 `0`（禁用）是刻意的，历史事故是 1000 ms 让部分从站 AL `0x001F` 进不了 OP（`MasterConfig.cs:421-426`） |
+| `master.loopCycle` | uint / ns | `["INIT"]` ⚠ | `nextCycle` | 非整数微秒或超出 `[31,10000] µs` → 原生拒绝、保持原值；改小导致丢帧/掉 OP；与 DC 站 SYNC0 不成整数倍 → AL `0x001A/0x002D/0x0034` | 在同一个窗口写回原值；或改 DENI 重连 | ⚠ 原生写门实际是「全站 INIT/PRE_OP」（`config_common.c:17188` → `:1649`），契约对外只开 INIT。另：托管 setter 在**状态转换进行中会直接跳过**并打 warning（`CSharp\Master\Core.cs:1793-1797`），所以「写了没反应」先看是不是正在转换。判据：`Core.cs:1756-1832`、`config_common.c:17142-17260`、`diagnostics.c:3962,3965` |
+| `master.dcCycle` | uint / ns | `["INIT"]` | `nextCycle` | 换 DC 时基会让所有 DC 站的 SYNC0 参考重算；DC 已武装时换 → 全环同步抖/掉 OP | 写回原值（同样要在未武装窗口） | native 拒绝条件：0 ns 无意义、>10 ms 超内核 RT 上限、**DC 已武装或无法证明未武装**时拒绝且保持原值（`CSharp\Master\Core.cs:1835-1867`，门在 `config_common.c:17026`） |
+| `master.timeout.initToPreOp` | int / ms | `["INIT"]` | `nextTransition` | 改太小 → 慢从站被误判超时，转换失败；`0` = **不超时**（等于关掉保护，卡死也回不来） | 写回默认（ETG 默认 3000） | 只在**升级方向**被读取（`core\state\state_machine.c:6023`）；上限被钳到 30 min（`:6030-6036`）。负值在托管层直接抛 `ArgumentOutOfRangeException`（`MasterConfig.cs:467-469`） |
+| `master.timeout.preOpToSafeOp` | int / ms | `["INIT","PRE_OP"]` | `nextTransition` | 同上；这个窗口要写启动 SDO + PDO 映射，太短会「配置写一半超时」 | 写回默认（10000） | `MasterConfig.cs:487-513`；`state_machine.c:6024` |
+| `master.timeout.safeOpToOp` | int / ms | `["INIT","PRE_OP","SAFE_OP"]` | `nextTransition` | 太短 → DC PLL 还没锁就被判失败；太长 → 故障恢复慢 | 写回默认（5000） | `MasterConfig.cs:519-545`；`state_machine.c:6025` |
+| `master.processDataWatchdogMs` | uint / ms | `["INIT","PRE_OP"]` | `nextTransition` | **低于拓扑安全下限会被抬高**（分支站 5000 / 环上 PDO 站 400），实际下发 ≠ 请求；太大 → 从站掉线后迟迟不报；`0` = 用从站默认 | 写回原值，或按读回的实际值调整上层超时判断 | 写入只是存进共享内存，**真正下发在进 OP / 热插拔恢复时逐站写寄存器**（`MasterConfig.cs:375-410`；`core\base\events.c:25589,25874`；`config_startup.c:16660-16705`）。`>6553` 托管层直接抛（`MasterConfig.cs:397-398`） |
+| `master.pdiWatchdogMs` | int / ms | `["INIT","PRE_OP"]` | `nextTransition` | 设太大 → 从站主站断连后仍继续输出；设太小 → 正常抖动也触发 | 写回原值 | 同上；默认 `0`（禁用）是刻意的，历史事故是 1000 ms 让部分从站 AL `0x001F` 进不了 OP（`MasterConfig.cs:421-426`） |
 | `master.mailbox.timeoutMs` | int / ms | `["ANY"]` | `immediate` | 太小 → SDO 频繁超时（`0x05040000` 类），启动参数批量写失败；太大 → 真故障要等很久才报 | 写回原值 | **纯托管字段**，不碰原生：邮箱事务在调用方没显式设超时时取本值（`MasterConfig.cs:355-373,687-696`；`Master\Abstractions\MailboxTransaction.cs:79`）。范围 1–60000 |
 | `master.mailbox.retryCount` | int / 次 | — | — | — | — | **`writable:false`。赋值只打一条 ERROR 日志、不下发、不生效**：托管层没有「失败自动重投」的转发点，盲目重投会让非幂等邮箱服务（FoE/SoE/CoE 写）被重复执行（`MasterConfig.cs:698-723`，日志在 `:716-720`）。要重试请在调用方自己重试 |
-| `master.pdoFilterThreshold` | uint / 帧 | `["ANY"]` | `nextCycle` | 调小 → 拔插瞬间疯狂报丢帧；调大 → 真丢帧要连续 N 拍才报，报警滞后 | 写回原值（默认 3） | 每周期被读：`core\base\events.c:12086,13792,14574`；`0` 时事件层按 3 处理（`events.c:2794`）。`MasterConfig.cs:261-291`（DLL 未就绪时写不进去并打 warning） |
+| `master.pdoFilterThreshold` | uint / 帧 | `["ANY"]` | `immediate` | 调小 → 拔插瞬间疯狂报丢帧；调大 → 真丢帧要连续 N 拍才报，报警滞后 | 写回原值（默认 3） | 每周期被读：`core\base\events.c:12086,13792,14574`；`0` 时事件层按 3 处理（`events.c:2794`）。`MasterConfig.cs:261-291`（DLL 未就绪时写不进去并打 warning） |
 | `master.hotSwapAutoRescanEnabled` | bool | `["ANY"]` | `immediate` | 关掉 → 插回站点不再自动发现，要手工 `HotSwapRebuild`；开着但没登记 optional 组 → 零开销（计时器根本不建） | 写回 `true` | 纯托管计时器，运行中赋值立即起作用（`MasterDiagnosticsInfo.HotSwapRescan.cs:41-68`） |
 | `master.hotSwapAutoRescanIntervalMs` | int / ms | `["ANY"]` | `immediate` | 赋值**被夹紧到 `[100,60000]`**：写 10 会变 100，写 999999 会变 60000，不报错 | 写回原值 | `MasterDiagnosticsInfo.HotSwapRescan.cs:26-30,70-90`（夹紧在 `:80-82`） |
 | `master.diagnostics.enabled` | bool | `["ANY"]` | `immediate` | 关掉只影响**可选统计**（帧计数/抖动/错误率）；WKC、周期、丢站记账属于基线档，**恒开、不受本开关影响** | 写回 `true` | `CSharp\Master\MasterDiagnosticsInfo.cs:786-800`；`core\diagnostics\diagnostics.c:562-579`（日志原文写明了生效范围） |
 | `master.highResolutionTimer` | bool | `["ANY"]` | `immediate` | 关掉 → 1 ms 定时精度下降，周期抖动变大 | 写回 `true` | 进程级开关，Windows 上赋值即生效（`MasterConfig.cs:52-59`；`Core.cs:1869-1876`） |
-| `master.frameHighPriority` | bool | `["ANY"]` | `nextBuild` | **Windows 上不生效**（native 明确「未实现 OS 层帧优先级提升」），改它只有心理作用 | 无需回退 | 值存在 `ec_State`，在 `SetNetwork` 才被消费：`core\state\state_machine.c:5571`；Windows 不支持的说明 `:5598`。`MasterConfig.cs:63-91` |
+| `master.frameHighPriority` | bool | `["ANY"]` | `immediate` | **Windows 上不生效**（native 明确「未实现 OS 层帧优先级提升」），改它只有心理作用 | 无需回退 | 值存在 `ec_State`，在 `SetNetwork` 才被消费：`core\state\state_machine.c:5571`；Windows 不支持的说明 `:5598`。`MasterConfig.cs:63-91` |
 | `master.useUdp` | bool | `["ANY"]` | `immediate` | **标准 EtherCAT 从站不支持 UDP 帧**，开了整条总线直接不通（只适用于 EL6601/EL6614 这类网关） | 立刻写回 `false` | 运行时双 Socket 切换；UDP socket 必须在 `SetNetwork` 时就建好，否则切换返回失败：`core\protocol\udp_support.c:63-95`（`:77` 写标志）。`MasterConfig.cs:93-126` |
-| `master.vlanId` | ushort | `["INIT"]` | `nextBuild` | 大部分标准从站不支持 VLAN 帧；非零会让帧头从 14 字节变 18 字节，从站全不认 | 写回 `0` | 托管文档明写「**需要在 SetNetwork 之前设置**、仅 WDK 驱动模式生效」：`MasterConfig.cs:128-162`（范围 0–4095，越界抛）。发送侧在 `state_machine.c:21125-21136` |
-| `master.vlanPriority` | byte | `["INIT"]` | `nextBuild` | 需要先有非零 `vlanId` 才有意义；范围 0–7 | 写回 `0` | `MasterConfig.cs:164-195`（越界抛）；消费点同上 |
-| `master.overlappingGroups` | bool | `["INIT","PRE_OP"]` | `nextBuild` | 开了但从站不支持 FMMU 逻辑地址重叠 → 过程数据整体错位（不报错）；标准 Beckhoff / 第三方从站**不要开** | 写回 `false`，重建主站 | 托管文档明写「仅在 INIT 或 PRE_OP 状态下设置」：`MasterConfig.cs:199-228`；帧构建时读取 `core\state\state_machine.c:17105` |
-| `master.frameRepeatCount` | byte | `["ANY"]` | `nextCycle` | 仅对组内全部支持 FrameRepeat 的从站生效；设 2–3 会让总线负载成倍上涨 | 写回 `1` | 范围 1–3，越界抛（`MasterConfig.cs:295-324`）；周期路径每拍读（`core\base\events.c:13653,14238`） |
+| `master.vlanId` | ushort | `["ANY"]`（**`writable:false` 只读**） | `immediate` | 大部分标准从站不支持 VLAN 帧；非零会让帧头从 14 字节变 18 字节，从站全不认 | 写回 `0` | 托管文档明写「**需要在 SetNetwork 之前设置**、仅 WDK 驱动模式生效」：`MasterConfig.cs:128-162`（范围 0–4095，越界抛）。发送侧在 `state_machine.c:21125-21136` |
+| `master.vlanPriority` | byte | `["ANY"]`（**`writable:false` 只读**） | `immediate` | 需要先有非零 `vlanId` 才有意义；范围 0–7 | 写回 `0` | `MasterConfig.cs:164-195`（越界抛）；消费点同上 |
+| `master.overlappingGroups` | bool | `["INIT","PRE_OP"]` | `nextTransition` | 开了但从站不支持 FMMU 逻辑地址重叠 → 过程数据整体错位（不报错）；标准 Beckhoff / 第三方从站**不要开** | 写回 `false`，重建主站 | 托管文档明写「仅在 INIT 或 PRE_OP 状态下设置」：`MasterConfig.cs:199-228`；帧构建时读取 `core\state\state_machine.c:17105` |
+| `master.frameRepeatCount` | byte | `["ANY"]` | `immediate` | 仅对组内全部支持 FrameRepeat 的从站生效；设 2–3 会让总线负载成倍上涨 | 写回 `1` | 范围 1–3，越界抛（`MasterConfig.cs:295-324`）；周期路径每拍读（`core\base\events.c:13653,14238`） |
 | `master.mutexProtection` | bool | — | — | — | — | **`writable:false`。原生固定 fail-closed 启用**：传 `false` 只打一条 warning，`mutex_protection` 仍写 1（`core\state\state_machine.c:24649-24663`）。`MasterConfig.cs:326-346` |
 
 ### 2.3 从站级
 
 | path | 类型/单位 | 允许状态 | 生效时机 | 改错的后果 | 回退办法 | 注意 / 源码判据 |
 |---|---|---|---|---|---|---|
-| `slave[n].dc.assignActivate` | ushort | `["INIT","PRE_OP"]` | `nextTransition` | 写错使能位（例如该给 SYNC0 却给了别的位）→ 从站按错误同步模式武装：SYNC 信号不出来，进 OP 那一步超时掉回 SafeOp（AL `0x001A/0x002D/0x0034`） | 改回 ESI 声明值，或 `ConfigureDC(DcSyncMode.FreeRun)` 收回武装 | **C# 目前没有可写的 `assignActivate` 属性**：`slave.DcAssignActivate` 是只读落地镜像（`CSharp\Master\Slave\DC.cs:2011-2027`）。写路径是 `ConfigureDC(DcSyncMode, ...)`（`:1277`），由一个模式原子地推出使能位。ESI 声明值可读：`slave.EsiDcAssignActivate`（`Slave\Core.cs:372-400`） |
+| `slave[n].dc.assignActivate` | ushort | `["ANY"]`（**`writable:false` 只读**，写走 `slave[n].dc.mode`） | `nextTransition` | 写错使能位（例如该给 SYNC0 却给了别的位）→ 从站按错误同步模式武装：SYNC 信号不出来，进 OP 那一步超时掉回 SafeOp（AL `0x001A/0x002D/0x0034`） | 改回 ESI 声明值，或 `ConfigureDC(DcSyncMode.FreeRun)` 收回武装 | **C# 目前没有可写的 `assignActivate` 属性**：`slave.DcAssignActivate` 是只读落地镜像（`CSharp\Master\Slave\DC.cs:2011-2027`）。写路径是 `ConfigureDC(DcSyncMode, ...)`（`:1277`），由一个模式原子地推出使能位。ESI 声明值可读：`slave.EsiDcAssignActivate`（`Slave\Core.cs:372-400`） |
 | `slave[n].dc.sync0CycleNs` | uint / ns | `["INIT","PRE_OP"]` | `nextTransition` | 必须 = `LoopCycle` 或为其**整数倍**；不是整数倍 → 数据未到达的同步没有意义，从站掉 OP | 写回原值；`0` = 卸下 SYNC0 武装（回 FreeRun） | 门：托管侧「全站 PreOp 才重放」`CSharp\Master\Slave\DC.cs:1020-1045`；原生逐站实测 `core\dc\dc_sync.c:624-700`。API：`DC.cs:1102,2398` |
 | `slave[n].dc.sync1CycleNs` | uint / ns | `["INIT","PRE_OP"]` | `nextTransition` | 从站没有 SYNC1 能力（AssignActivate bit10 `0x0400`）却给了非零值 → 武装失败/无 SYNC1 输出 | 写回 `0` | `DC.cs:1269-1272`；SYNC1 使能位说明 `Slave\Core.cs:759-770` |
 | `slave[n].dc.shiftNs` | int / ns | `["INIT","PRE_OP"]` | `nextTransition` | `0` = **字面 0 相位**（SYNC0 落在周期边界，不再回落 70%）；填错相位 → 从站在错误时刻采样，表现为同步错误或跟随误差大 | 传「未指定」（null）让它按 ESI → 70% 自动解析，或写回旧值 | 相位优先级：ESI 显式 > 用户显式（含 0/负值）> 默认「1 倍周期 + 70%」（`DC.cs:1085-1097`；`DOC\docs\quick-start\advanced\dc.md:44-54`）。**注意「写成功」只是派发成功**：`ConfigureDC` 返回 true 时硬件可能还没写（门关着就延后），必须读回 `DcSync0CycleNs` 确认 |
@@ -688,16 +692,16 @@ namespace YourApp.Runtime
 
 ## 9. 查不到出处、只能推断的项（如实列出）
 
-1. **`slave[n].dc.assignActivate` 的写入形态**：契约把它列成一条可写路径，但当前 C# SDK **没有** `AssignActivate` 的写属性（`DcAssignActivate` 只有 getter）。
-   我推断写回层会用 `ConfigureDC(DcSyncMode, ...)` 反推使能位，**但没有在代码里找到这层映射**。落地时以实际实现为准；如果写回层没有单独暴露这条路径，会返回 `PATH_UNKNOWN`。
-2. **`master.loopCycle` 契约只开 `INIT`**：原生写门实际接受 `INIT` + `PRE_OP`（`config_common.c:1649`）。我按冻结契约写 `["INIT"]`，把原生门如实写进「注意」列。**没有找到「契约为什么收紧到 INIT」的设计说明**，这是推断（更保险的配置窗口）。
-3. **`master.vlanId` / `vlanPriority` 归到 `INIT` + `nextBuild`**：依据是托管 XML 注释「需要在 SetNetwork 之前设置」（`MasterConfig.cs:134`）和帧发送时读取（`state_machine.c:21125`）。
-   **没有找到卡死这条的状态门代码**——它是「按调用顺序保证」而不是「按状态拒绝」，属于推断。
+1. **`slave[n].dc.assignActivate` 是只读路径**：2.13.16 的 `query:writable` 明确给 `writable:false`（镜像 `Slave.DCActive`）。
+   写 DC 用可写的 `slave[n].dc.mode`（背后是 `ConfigureDC(DcSyncMode, ...)`），单独的 assignActivate 写入会回 `PATH_READONLY`。
+2. **`master.loopCycle` 契约只开 `INIT`**：原生写门实际接受 `INIT` + `PRE_OP`（`config_common.c:1649`）。实测 `query:writable` 给的就是 `["INIT"]`，把原生门如实写进「注意」列。**没有找到「契约为什么收紧到 INIT」的设计说明**，这是推断（更保险的配置窗口）。
+3. **`master.vlanId` / `vlanPriority` 在 2.13.16 是只读**：`query:writable` 给 `writable:false`（notes 写「setter 只改共享内存，native 仅在 SetNetwork 建 socket 时消费」）。所以不是「INIT + nextBuild」，是根本不能在线写 —— 要改只能改 DENI / 重建。
 4. **`slave[n].startup.*` 归到 `INIT/PRE_OP`**：启动 SDO 本身是纯托管列表，任何时候都能改；真正执行在各状态转换（`highlevel.c:208,599-604`）。「INIT/PRE_OP」是按「有效窗口」而非「写入被拒」推断的。
 5. **`slave[n].pdo.output` 在非 OP 写入后的最终去向**：原生只 memcpy 进过程映像、无状态门（`state_machine.c:23716`）。
    「进 OP 第一拍会原样发出去」是按「周期线程发的是这份映像」推断的，**没有找到一条写着这句话的代码或注释**。
-6. **`master.dcCycle` 的允许状态**：冻结契约没给。我按原生写门（`config_common.c:17026` → `:1649`）推成 `INIT/PRE_OP`，属于推断。
-7. **`query:writable` / `--write` 的命令实现状态**：本文的字段与拒绝码按冻结契约写；仓库里我**没有找到** `query:writable` 的实现（`Darra_EtherCAT_Master\外部自动化\` 存在，但搜不到该命令）。
-   契约与实现是否已经同步，需要向发布方确认；不要凭本文假设当前版本一定支持。
+6. **`master.dcCycle` 的允许状态**：实测 2.13.16 `query:writable` 给 `["INIT"]` + `nextCycle`（不是 `INIT/PRE_OP` + `nextTransition`）。
+7. **`query:writable` 已实现**（2.13.16 实测）：命令入口在 `Darra_EtherCAT_Master\命令通道\命令路由.动作.cs:1317`，写回执行在 `无头写回`；
+   未建站时回 `NOT_CONNECTED`，建站后返回 52 项能力表（含 `allowedStates` / `applyTiming` / `currentValue` / `notes`）。
+   `act:write` 支持 `path` / `value` / `valueB64` / `verify=0|1`。
 8. **`processDataWatchdogMs` 的具体安全下限规则**：分支站 5000 ms / 环上 PDO 站 400 ms 来自源码注释（`config_startup.c:16613-16620`），
    但「哪些站算分支、哪些算环上 PDO」的判定在拓扑分类里，本文未展开；写死这些数字前请以 `GetWatchdogConfig()` 读回值为准。

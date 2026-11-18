@@ -271,7 +271,9 @@ ESI 有 PDO 时，GUI 从 ESI 读取；只有 ESI 为空才回退到运行时对
 ### 做完怎么算过
 
 - `slave.Sync0Armed == true`。三态：`true`=已武装；`false`=有判据的未武装（含无 DC 能力站）；`null`=读不到。**不要把 null 折成 false。**
-- `GetSyncWindowStatus()` 对 DC 从站 `Applicable=true` 且 `InSync=true`，`DiffNs` 在窗口内。
+- `slave.GetSyncWindowStatus()` 返回 **`SyncWindowStatus?`**（可空，先判 `HasValue`），字段只有
+  `DiffNs` / `MaxDiffNs` / `MinDiffNs` / `InSync` / `OutOfSyncCount` —— **没有 `Applicable`**。
+  对 DC 从站判 `var sw = slave.GetSyncWindowStatus(); sw.HasValue && sw.Value.InSync`，再看 `DiffNs` 是否在窗口内。
 - `master.GetMaxSyncDifference()` / `MaxSyncDifferenceNs` 不是 `null`，也不是 `-1`（-1=确定没有 DC-active 站）。
 - `0x1C32` / `0x1C33` = **2**（DC 模式）；FreeRun 下 InSync 恒 false，不代表已同步。
 - CSP 的 `0x60C2` 读回 == 期望值。
@@ -389,7 +391,7 @@ ESI 有 PDO 时，GUI 从 ESI 读取；只有 ESI 为空才回退到运行时对
 | 1 | 主站 OP | `master.State == EcState.OP` | SDK / GUI 状态 |
 | 2 | 从站全 OP | 所有 `Slave.State == OP`；`IsLost=false`；`AlStatusCode=0`；`SlaveCount`=实际台数 | SDK / GUI 在线数、诊断 |
 | 3 | WKC 满 | 进 OP 后 2 s 内 `WKC == ExpectedWKC` 且 `ExpectedWKC != 0`；无 WkcShortage 事件 | `master.Diagnostics.WKC` / `ExpectedWKC` |
-| 4 | DC in-sync | DC 站 `Sync0Armed==true`；`GetSyncWindowStatus().Applicable && InSync`；`MaxSyncDifferenceNs` 在窗口内；`0x1C32/0x1C33=2`（DC 模式） | SDK / GUI DC 页 |
+| 4 | DC in-sync | DC 站 `Sync0Armed==true`；`GetSyncWindowStatus()` 非 null 且 `.Value.InSync`；`MaxSyncDifferenceNs` 在窗口内；`0x1C32/0x1C33=2`（DC 模式） | SDK / GUI DC 页 |
 | 5 | 无报警/故障 | AL=0；`0x603F=0`；无 `0x8611` 跟随误差；驱动器非 Fault | SDK / GUI CiA402 页 |
 | 6 | PDO 有效 | `Obytes`/`Ibytes` 与映射一致且 >0；状态字/实际位置在刷新 | SDK / GUI PDO 页 |
 | 7 | GUI 诊断 | 健康值正常；帧错误/丢失帧/校验错误/超时帧为 0 或稳定不增长；丢包率 0 | 「诊断」页 |

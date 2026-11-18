@@ -2,7 +2,7 @@
 name: darra-download
 description: >
   从零拿到 Darra EtherCAT Master 的 Windows 安装包。覆盖：官网下载页与固定直链（下载不需要账号）、
-  当前发布版本与版本号规则、728 MB 安装包的下载与断点续传、SHA256 校验（期望值从 `.sha256` 直链取，
+  当前发布版本与版本号规则、约 700 MB 安装包的下载与断点续传、SHA256 校验（期望值从 `.sha256` 直链取，
   不抄固定值）、拿不到时的替代路径，最后输出一段 JSON 契约（ok / version / path / bytes / sha256 / source / next）。
   只负责「从零到拿到安装包」，不负责安装：装、卸、升级、退出码与装后验证交给 darra-runtime-install。
   触发词：下载 / 下载安装包 / 安装包在哪 / 哪里下载 / 我要试用 / 试用 / 评估版 / 获取安装包 /
@@ -61,13 +61,17 @@ description: >
 
 ## 3. 去哪拿
 
-**官网下载页**（人看的入口，带版本表格和 SHA256）：
+**官网下载页**（人看的入口：版本表格 + 命令行参数/退出码说明）：
 
 ```
 https://ethercat.darra.xyz/doc/downloads/
 ```
 
-> 注意：`https://ethercat.darra.xyz/downloads` 是 **404**，没有这一页。正确的是带 `/doc/` 的地址，末尾斜杠可有可无。
+> 页面本身**不写包大小和 SHA256**（只有 `.sha256` 直链）。字节数从直链 HEAD 的 `Content-Length` 取，
+> 哈希从 `.sha256` 取。
+>
+> 注意：`https://ethercat.darra.xyz/downloads` 会 **301** 跳到 `https://ethercat.darra.xyz/doc/downloads/`
+> （`/doc/downloads` 无尾斜杠是 308），不是 404。脚本直接用带 `/doc/` 的地址即可。
 
 **安装包固定直链**（脚本用这个）：
 
@@ -81,7 +85,9 @@ https://download.darra.xyz/ethercat/client/Darra-EtherCAT-Setup.exe
 https://download.darra.xyz/ethercat/client/Darra-EtherCAT-Setup.exe.sha256
 ```
 
-包大小：**728,333,928 字节**（约 694.6 MiB）。
+包大小：**735,489,640 字节**（约 701.4 MiB，2026-11-18 01:50 UTC 重打包后的当天值）。
+**不要把这个数写死进脚本** —— 同版本重打包会变（本次就从 728,333,928 变成 735,489,640）。
+每次用下面第 4 节的 HEAD 取当天 `Content-Length` 作为期望字节数。
 
 不要拼带版本号的文件名（`Darra-EtherCAT-Setup-2.13.16.exe` 这种）。带版本号的名字不在公开下载位上，拼出来是 404。
 
@@ -97,18 +103,26 @@ curl.exe -L --fail --retry 3 -C - -o $o $u
 
 `-C -` 是断点续传：网断了重跑同一条命令会接着下，不会从头来。
 
-下完先看字节数，再算哈希：
+下完先看字节数（期望值来自下载前 HEAD 的 `Content-Length`），再算哈希：
 
 ```powershell
+$head     = Invoke-WebRequest -UseBasicParsing -Method Head -Uri $u
+$expectedBytes = [int64]$head.Headers['Content-Length']      # 本次的期望字节数，别写死
 $expected = ((New-Object Net.WebClient).DownloadString("$u.sha256") -split '\s+')[0].ToUpper()
 $actual   = (Get-FileHash -Algorithm SHA256 $o).Hash
 $bytes    = (Get-Item $o).Length
 
-"bytes    = $bytes"
-"expected = $expected"
-"actual   = $actual"
-"match    = $($actual -eq $expected)"
+"expectedBytes = $expectedBytes"
+"bytes         = $bytes"
+"size_match    = $($bytes -eq $expectedBytes)"
+"expected      = $expected"
+"actual        = $actual"
+"match         = $($actual -eq $expected)"
 ```
+
+> 如果用 `Invoke-WebRequest` 取 `.sha256` 而不是 `Net.WebClient.DownloadString`：响应体是 **`byte[]`**，
+> 先 `[Text.Encoding]::UTF8.GetString($r.Content)` 再按空白切分（实测 2.13.16，直接 `.Trim()` 会报
+> 「[System.Byte] 不包含名为 Trim 的方法」）。
 
 版本号（填 JSON 的 `version`，不要从文件名猜）：
 
@@ -120,7 +134,7 @@ $bytes    = (Get-Item $o).Length
 
 哈希对不上怎么办（按顺序走，不要跳步）：
 
-1. **先看字节数**。不等于 728,333,928 就是没下完或被截断 —— 用 `-C -` 续传或重下，不要拿去装。
+1. **先看字节数**。不等于本次 HEAD 的 `Content-Length`（2026-11-18 快照 735,489,640）就是没下完或被截断 —— 用 `-C -` 续传或重下，不要拿去装。
 2. 字节数对、哈希不对：**删掉重下**（`Remove-Item $o`）。断点续传出来的文件可能拼了两次不同版本，续传救不了。
 3. 重下两次还不对：**停手**。把 `expected` / `actual` / 字节数 / URL 四项一起告诉用户，不要「先装看看」。这通常意味着中间有代理改写了响应，或者拿到了内网缓存的旧件。
 4. 用户手上已有离线副本（别人拷的、内网镜像来的）：**一样要过这条哈希**。来源不重要，哈希对不上就是不能用。
@@ -144,8 +158,8 @@ $bytes    = (Get-Item $o).Length
   "ok": true,
   "version": "2.13.16",
   "path": "C:\\Users\\me\\Downloads\\Darra-EtherCAT-Setup.exe",
-  "bytes": 728333928,
-  "sha256": "0B0CC70C9E358D90B7FC9DF6BEF6637EDD4619362866FBB0210590CDE9FCCCA9",
+  "bytes": 735489640,
+  "sha256": "B317985FBE4D41DC1AA3BCFED5706474B26232CA61F1B7E5496310C6D369D63D",
   "source": "https://download.darra.xyz/ethercat/client/Darra-EtherCAT-Setup.exe",
   "next": "darra-runtime-install"
 }
@@ -156,7 +170,7 @@ $bytes    = (Get-Item $o).Length
 | `ok` | 只有「下载完成 + 字节数对 + 哈希对」三条同时成立才是 `true` |
 | `version` | 从安装包自身读到的版本，不是从文件名猜的 |
 | `path` | 本地绝对路径，后续技能体直接用它 |
-| `bytes` | 实际字节数（成功时应等于 728,333,928 这一版的官方大小） |
+| `bytes` | 实际字节数（成功时应等于**本次下载前 HEAD 到的** `Content-Length`；2026-11-18 快照 735,489,640） |
 | `sha256` | 实测哈希，大写十六进制 |
 | `source` | 实际使用的下载 URL |
 | `next` | 固定 `darra-runtime-install` |
@@ -169,7 +183,7 @@ $bytes    = (Get-Item $o).Length
   "reason": "hash_mismatch",
   "version": null,
   "path": "C:\\Users\\me\\Downloads\\Darra-EtherCAT-Setup.exe",
-  "bytes": 728333928,
+  "bytes": 735489640,
   "sha256": "（实测值）",
   "source": "https://download.darra.xyz/ethercat/client/Darra-EtherCAT-Setup.exe",
   "next": "darra-runtime-install"
@@ -186,11 +200,12 @@ $bytes    = (Get-Item $o).Length
 |---|---|
 | URL | `https://download.darra.xyz/ethercat/client/Darra-EtherCAT-Setup.exe` |
 | HTTP | `200`，`Content-Type: application/octet-stream`，`Accept-Ranges: bytes`（支持续传） |
-| 字节数 | `728,333,928` |
-| 下载耗时 | `35 s`（约 `19.9 MB/s`，走公网直连） |
-| SHA256（前 16 位） | `0B0CC70C9E358D90…` |
-| 实测 SHA256 | `0B0CC70C9E358D90B7FC9DF6BEF6637EDD4619362866FBB0210590CDE9FCCCA9` |
-| `.sha256` 直链 | 返回 `0b0cc70c…fccca9  Darra-EtherCAT-Setup.exe`，与实测一致 |
+| 字节数 | `735,489,640` |
+| 下载耗时 | 发布当天 `35 s`（约 `19.9 MB/s`，公网直连）；2026-11-18 下午复测时链路中途停滞（两次分别停在 528 MB / 543 MB）。速度随出口波动，`35 s` 不是承诺 |
+| SHA256（前 16 位） | `B317985FBE4D41DC…` |
+| 实测 SHA256 | `B317985FBE4D41DC1AA3BCFED5706474B26232CA61F1B7E5496310C6D369D63D` |
+| `.sha256` 直链 | 返回 `b317985f…d369d63d  Darra-EtherCAT-Setup.exe`；与磁盘上官方安装包实测 SHA256 完全一致（735 MB 算完 1.1 s） |
+| 断点续传 | 造一个 1,000,000 字节半截文件再 `curl -C -`：请求头 `Range: bytes=1000000-`，服务端 `206 Partial Content`，`Content-Range: bytes 1000000-735489639/735489640` |
 | 包内版本证据 | 文件版本 `2.13.16.0`；包内清单含 `SDK\SDK_CSharp\Darra.EtherCAT.Master.2.13.16.nupkg` |
 | 交叉核对 | 与 Darra 内部发布位同一份文件（字节数、哈希完全一致） |
 

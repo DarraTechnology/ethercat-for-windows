@@ -79,7 +79,12 @@ if (!result.Success) { Console.WriteLine(result.Message); return; }
 var master = result.Master;
 ```
 
-`Build()` 只能调用一次。`SetENI` 和 `SetNetwork` 都写时，后写的网口生效。
+`Build()` 只能调用一次。
+
+**有 DENI 时不要写 `SetNetwork`。** DENI 里已经带了网口；实测（2.13.16）`SetENI(...).SetNetwork(nic).Build()`
+能建站，但随后 `SetState(OP)` 会失败（从站 AL `0x0017` SyncManager 配置非法，耗时 80 s 超时）；
+去掉 `SetNetwork`、同一份 DENI 直接 `SetENI(...).Build()` 则 2.4 s 进 OP、WKC 6/6。
+`SetNetwork` 只在**没有 DENI**（走 ESI / 手选网卡）时用。
 
 ## C# 完整可跑
 
@@ -101,15 +106,15 @@ class Program
 {
     static void Main()
     {
-        // 1. 选卡：挑有从站的那块（Name 形如 \Device\NPF_{GUID}）
+        // 1. 先确认有一块确实挂着从站的网卡（只做前置检查，不把它交给主站）
         var nic = DarraEtherCAT.GetNetworkInfo(needSlavesNum: true)
             .FirstOrDefault(n => n.SlaveNum > 0);
         if (nic == null) { Console.WriteLine("没有扫到从站的网卡"); return; }
 
-        // 2. 建主站：Build() 只能调一次，必须看 result.Success
+        // 2. 建主站：Build() 只能调一次，必须看 result.Success。
+        //    有 DENI 就不要 SetNetwork —— 网口由 DENI 决定；两者同时写会让进 OP 失败。
         var result = new DarraEtherCAT()
             .SetENI(@"config.deni")     // DENI 由配置工具导出
-            .SetNetwork(nic)            // 后写的网口生效
             .Build();
         if (!result.Success) { Console.WriteLine(result.Message); return; }
 

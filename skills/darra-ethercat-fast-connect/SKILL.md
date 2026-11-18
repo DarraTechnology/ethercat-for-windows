@@ -114,7 +114,9 @@ DarraEtherCAT master = result.Master;
 
 三条硬规矩：
 
-1. **`SetENI` 之后不要再 `SetNetwork`** —— 后写网口会让 SDK 退回「C# 自解析」慢路径。
+1. **`SetENI` 之后不要再 `SetNetwork`** —— 后写网口会让 SDK 退回「C# 自解析」慢路径；
+   更严重的是实测（2.13.16，2026-11-18）：同一份 DENI 加 `SetNetwork` 后 `SetState(OP)` 失败
+   （从站停在 PreOp，AL `0x0017` SyncManager 配置非法，81 s 后超时），去掉 `SetNetwork` 后 2.4 s 进 OP、WKC 6/6。
    网卡换过/改名了就让 SDK 按 DENI 里的网卡名与 MAC 自己找。
 2. **用 DENI 时不要 `SetEsiFiles`** —— 实测多付 1.2 s（Intel 总线 6.13 s → 4.91 s）。
 3. **`Build()` 只能调一次**，必须看 `result.Success`。
@@ -301,6 +303,7 @@ DENI 拿到 `6/6`、两个站都武装。**DENI 不是「少做点事所以快�
 | 现象 | 真因 | 正确做法 |
 |---|---|---|
 | 用 DENI 还是很慢 | `SetENI` 之后又调了 `SetNetwork`，退回 C# 自解析慢路径 | 只 `SetENI`，网口交给 DENI |
+| 用 DENI 能建站但进 OP 失败（AL `0x0017`） | 同上：`SetENI` 后又调了 `SetNetwork`，SM/PDO 配置被覆盖成不一致 | 去掉 `SetNetwork`；网口由 DENI 决定 |
 | 用 DENI 还是慢 1.2 s | 顺手传了 `SetEsiFiles` | DENI 路径不要传 |
 | 换机器后 DENI 连不上 / 变慢 | DENI 里的网卡名 / MAC 与新机器不一致，退化成逐口全扫 | 在新机器上重新导出一份 DENI |
 | 第二次连接卡 20 s 左右 | 上一次没有 `Close()`，驱动在等实例交还 | 所有路径（含异常）都 `finally { master.Close(); }` |

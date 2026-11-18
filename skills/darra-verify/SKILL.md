@@ -81,10 +81,14 @@ SDK/
 ```powershell
 $sdk = 'C:\DARRA\EtherCAT_Master\SDK'   # 用过 --path 就换成实际安装目录
 Get-ChildItem $sdk
-Test-Path "$sdk\SDK_CSharp\DarraEtherCAT.dll"
+Get-ChildItem "$sdk\SDK_CSharp"         # 应能看到 Darra.EtherCAT.Master.<版本>.nupkg
 ```
 
-`Test-Path` 为 `True` = C# 运行库在位；其它语言按各自目录里的文件确认。
+C# 的交付物是 **nupkg 包**，不是裸 DLL：装完 `SDK_CSharp` 下只有 `Darra.EtherCAT.Master.<版本>.nupkg`，
+`DarraEtherCAT.dll` 在包的 `lib/netstandard2.0/` 里，由 `dotnet restore` 还原到 `~\.nuget\packages\`。
+所以 `Test-Path "$sdk\SDK_CSharp\DarraEtherCAT.dll"` **在正确安装的机器上也是 `False`**，不要拿它当安装判据。
+判据改成：nupkg 文件存在，且第 4 节能 `dotnet add package` / 第 5 节能加载出版本号。
+其它语言按各自目录里的文件确认（C/Python/Java/Rust 是解包目录 / wheel / jar / crate）。
 
 版本口径：SDK 版本与安装包一致，当前下载页标注 `2.13.16`（以 https://ethercat.darra.xyz/doc/downloads 为准）。
 读到别的版本时先确认装的是哪个包，不要假定自己拿到的是最新版。
@@ -102,7 +106,15 @@ cd DarraVerify
 dotnet add package Darra.EtherCAT.Master
 ```
 
-装不装得上 net8 SDK 看用户机器。只有 net9 / net10 时按上面那条说明改工程，别硬扛。
+**必须显式锁定 x64**：SDK 的 `buildTransitive` 在编译前校验平台，`AnyCPU` 会让 `dotnet run` 直接报
+`[Darra] Darra.EtherCAT.Master 当前仅支持 x64；请显式使用 Platform=x64 和 PlatformTarget=x64`。
+两种写法任选一种（下面第 5 节的运行命令都按第一种）：
+
+- 命令行：`dotnet run -p:PlatformTarget=x64`（只加 `-p:Platform=x64` 会把输出目录改到 `bin\x64\...`，`dotnet run` 找错路径）；
+- 或写进 csproj 的 `<PropertyGroup>`：`<PlatformTarget>x64</PlatformTarget>`（需 `dotnet run` 重新构建）。
+
+装不装得上 net8 SDK 看用户机器。只有 net9 / net10 时，除了 x64 还要在 csproj 里设 `<UseAppHost>false</UseAppHost>`
+并用 `dotnet app.dll` 运行（net9/10 的 apphost 与本版 `Darra.Core.dll` 不兼容）；更省事的是装个 net8 SDK。
 
 ## 5. L2 + L3 + L4：一段程序一次拿全
 
@@ -156,10 +168,10 @@ class Program
 
 ## 6. 读这段 JSON 的字段
 
-在管理员终端里：
+在管理员终端里（工程不是 x64 时要带平台，见第 4 节）：
 
 ```
-dotnet run
+dotnet run -p:PlatformTarget=x64
 ```
 
 输出是一段 JSON，直接原样贴给用户（就是结论，不用再加工）。字段口径：
@@ -187,15 +199,17 @@ class Program
 {
     static int Main(string[] args)
     {
-        // 1. 选那张确实挂有从站的网卡
+        // 1. 确认有一张确实挂有从站的网卡（只做前置检查，不把它交给主站）
         var nic = DarraEtherCAT.GetNetworkInfo(needSlavesNum: true)
             .FirstOrDefault(n => n.SlaveNum > 0);
         if (nic == null) { Console.WriteLine("L5 FAIL: 没有扫到从站的网卡"); return 2; }
+        Console.WriteLine($"L5 用网卡: {nic.Name} 从站 {nic.SlaveNum}");
 
-        // 2. 用 DENI 建站
+        // 2. 用 DENI 建站 —— 网口由 DENI 决定，不要再 SetNetwork。
+        //    实测（2.13.16）：SetENI 之后再 SetNetwork 会让随后进 OP 失败（从站 AL 0x0017），
+        //    去掉 SetNetwork 同一份 DENI 能进 OP、WKC 6/6。
         var result = new DarraEtherCAT()
             .SetENI(args[0])          // 传入 config.deni 的路径
-            .SetNetwork(nic)
             .Build();
         if (!result.Success) { Console.WriteLine("L5 FAIL: Build 失败 - " + result.Message); return 3; }
 
@@ -225,10 +239,10 @@ class Program
 }
 ```
 
-跑法（管理员终端，参数是 DENI 路径）：
+跑法（管理员终端，参数是 DENI 路径；x64 见第 4 节）：
 
 ```
-dotnet run -- "C:\EtherCAT\config.deni"
+dotnet run -p:PlatformTarget=x64 -- "C:\EtherCAT\config.deni"
 ```
 
 退出码就是结论：`0` = 进 OP 成功且身份对象读得到；`2`–`5` = 卡在哪一步。
@@ -246,6 +260,10 @@ L5 成功只能说明：**主站能进 OP，且从站对象字典读得通**。�
 **只有 `EmptyBus`（`slave_count` = 0）**
 网卡可用，总线上当前确实没有从站。这是**正常且有意义的结论**，不是失败，也不是装坏了。
 可以告诉用户：SDK 能扫、这个口是空的；要接设备就接线后再跑一遍。
+
+> 实测提醒（2.13.16）：**链路 Down 的网口也可能被快扫报 `EmptyBus` / `slave_count=0`**。
+> 判「实测空口」前先看同一行的 `link_status` 是不是 `Up`；Down 的口按「没量到」处理
+> （同一张卡 `QuickSlaveCount` 返回负码，如 `-1`）。
 
 **全是 `NotMeasured` / `OccupiedByMaster` / `NotScanned` / `Unsupported` / `Aborted` / `Failed`，一个 `EmptyBus` 都没有**
 这是**没量到**，不是"没有从站"。按 `scan_state` 和 `native_code` 说清楚原因：

@@ -384,7 +384,17 @@ DC 模式/SYNC0/SYNC1 控件只在 PreOp 可改；其它状态页内显示 `运�
 
 传输方式：向 GUI 主窗口发 `WM_COPYDATA`，载荷 `DARRAGUI1|<命令>`（UTF-16LE，无结尾 NUL）；
 GUI 反向回 `DARRAGUI1R|<json>`。回执是 5 键信封：`ok / cmd / requestId / reason{code,detail} / data`。
-仓内自带客户端 `AI/tools/Invoke-GuiCommand.ps1`（自动找窗口、发一条、收回执、打印 JSON），下面示例都用它。
+客户端脚本随本技能体提供：`tools/Invoke-GuiCommand.ps1`（自动找窗口、发一条、收回执、打印 JSON），
+下面示例都用它。产品源码树里也有一份 `AI/tools/Invoke-GuiCommand.ps1`，但**官方安装包不随附 `AI\` 目录**
+（实测 2.13.16 安装目录只有 exe / SDK / ESI / 日志），只装包的用户用技能体这份。
+
+> 客户端必须与 GUI 在**同一个桌面会话**（同一个登录用户、同一个 SessionId）。从 WinRM / 服务 /
+> Session 0 里跑客户端看不到 GUI 窗口，会得到 `GUI_NOT_RUNNING`（实测：WinRM 会话 `Get-Process`
+> 能看到进程但找不到它的顶层窗口）。需要无人值守时，用计划任务以登录用户身份、勾选「只在用户登录时运行」，
+> 让客户端跑在 GUI 所在的会话里。
+>
+> 机器默认的 `ExecutionPolicy` 可能禁止运行脚本；被拦时用
+> `powershell.exe -NoProfile -ExecutionPolicy Bypass -File tools\Invoke-GuiCommand.ps1 -Command "query:session"`。
 
 ### 0. 什么时候用这条通道
 
@@ -397,8 +407,10 @@ GUI 反向回 `DARRAGUI1R|<json>`。回执是 5 键信封：`ok / cmd / requestI
 
 ### 1. 前置检查（不过就别往下走）
 
-1. GUI 进程在跑，主窗口可见。
-2. 自动化进程与 GUI 的完整性级别要能互发消息；发不进去的典型表现是 `NO_REPLY` / `ACCESS_DENIED`。
+1. GUI 进程在跑，主窗口可见。**同一台机器同时只允许一个 GUI 实例**：再启动一个会写日志
+   「Darra EtherCAT Master 已在运行中, 请勿重复启动」并以退出码 `0` 结束（实测 2.13.16）。
+2. 自动化进程与 GUI 在同一个桌面会话，且完整性级别要能互发消息；发不进去的典型表现是
+   `GUI_NOT_RUNNING`（跨会话）/ `NO_REPLY` / `ACCESS_DENIED`。
 3. 一条命令对应一条回执；异步动作（建站/切态/断开/导出）是**两条**。
 
 **判据**：`Invoke-GuiCommand.ps1 -Command "query:session" -Raw` 打出 JSON，且 `data.gui.pid` 与 GUI 进程号一致、`data.busy` 三个布尔都是 `false`。
@@ -450,6 +462,11 @@ master.slaveCount > 0
 ```
 
 **超时**：首次全扫描 30–120 s 属正常；超过 180 s 先别重发，查 `query:actions` 里这条 `jobId` 是 `running` 还是 `failed`。
+
+**作业失败必须主动停**：`act:connect` 的 `ok:true` 只表示「已受理」。作业失败时主站可能仍被建出来
+（`query:session.master.present` 为 `true`、state 停在 `INIT`），只在 `query:actions.jobs[]` 里体现
+`state:"failed"` + `reasonCode`（实测：缺 ESI 时 `ESI_CONFIRM_REQUIRED`，1.4 s 就失败，但按
+`busy/state` 轮询会一直转圈）。所以每 3–5 次轮询要查一次 `query:actions`，见到 `failed` 立刻停并按码处置。
 
 **撞车处置**：
 - `BUSY` → 已有作业在跑，等它结束，别并发。
@@ -531,12 +548,30 @@ act:disconnect
 **为什么必须做**：主站独占网卡与驱动通道。不释放，下一路建站会拿到 `NIC_OCCUPIED` / SDK 错误 170，
 表面像"网卡坏了"，实际是上一路没交还。
 
-### 10. 失败处置总表
+### 10. 命令总表
+
+| 命令 | 回执 | 作用 |
+|---|---|---|
+| `query:session` | 同步 | GUI/主站/选择/忙碌/上一条命令 |
+| `query:slaves[;limit=N]` | 同步 | 从站列表（含 `truth.verdict`） |
+| `query:slave;n=N` | 同步 | 单从站 |
+| `query:master` | 同步 | WKC / 周期 / 抖动 / 健康度 |
+| `query:nic-scan` | 同步 | 网卡清单（不扫从站） |
+| `query:actions[;limit=N]` | 同步 | 最近的命令与**异步作业状态**（`running` / `succeeded` / `failed`） |
+| `query:writable[;group=master\|slave\|pdo]` | 同步 | 可写能力表（需要活主站，未建站回 `NOT_CONNECTED`） |
+| `act:connect;nic=<guid 或 mac>[;start=OP\|SAFE_OP\|PRE_OP\|INIT]` | 异步 | 建站（可选同时切态） |
+| `act:start;state=OP\|SAFE_OP\|PRE_OP\|INIT` | 异步 | 给已建好的主站切状态 |
+| `act:disconnect` | 异步 | 释放主站与网卡（幂等） |
+| `act:write;path=<path>;value=<明文>` 或 `valueB64=<base64>`[;verify=0\|1] | 同步 | 写回一个参数并默认回读校验 |
+| `act:export-deni;path=<绝对路径>` | 异步 | 导出 DENI |
+| `act:export-code;dir=<绝对路径>;lang=csharp\|python\|java\|rust\|c\|cpp` | 异步 | 导出对应语言工程 |
+
+### 11. 失败处置总表
 
 | 码 | 判据 | 怎么修 |
 |---|---|---|
 | `BAD_REQUEST` | 参数缺失/拼错/重复 | 照命令语法重发；`;` 和 `=` 是分隔符，值里含它们改用 `valueB64` |
-| `UNKNOWN_COMMAND` | subject 拼错 | 查第 9 节命令总表 |
+| `UNKNOWN_COMMAND` | subject 拼错 | 查第 10 节命令总表 |
 | `NOT_CONNECTED` | `master.present=false` | 先 `act:connect` |
 | `BUSY` | 已有作业/初始化/切态 | 轮询 `query:session.busy`，等 |
 | `NIC_NOT_FOUND` | 标识不在清单 | 重新 `query:nic-scan` 取 `guid` |
@@ -553,10 +588,11 @@ act:disconnect
 | `INTERNAL` | 未预期异常 | 看 GUI 日志的 Error 项 |
 | 传输层 `NO_REPLY` / `ACCESS_DENIED` | 没有回执 | 权限/完整性级别，或客户端用了阻塞式发送 |
 
-### 11. 一份可直接执行的完整命令序列
+### 12. 一份可直接执行的完整命令序列
 
 ```powershell
-$cli = 'AI\tools\Invoke-GuiCommand.ps1'
+# 在本技能体目录下执行（client 在 skills\darra-ethercat-gui\tools\）
+$cli = 'tools\Invoke-GuiCommand.ps1'
 
 # 1) GUI 在不在
 & $cli -Command 'query:session' -Raw
@@ -569,11 +605,20 @@ if (-not $nic -or $nic.state -notin 'ready','unbound') { throw "网卡不可用:
 # 3) 建站并进 OP（同步回 accepted，随后可轮询）
 & $cli -Command ("act:connect;nic={0};start=OP" -f $nic.guid) -Raw
 
-# 4) 等建站/切态真正结束
-do {
+# 4) 等建站/切态真正结束：有上限，作业 failed 立即停（别只看 busy/state）
+$deadline = (Get-Date).AddSeconds(180)
+while ((Get-Date) -lt $deadline) {
   Start-Sleep -Milliseconds 1500
   $s = & $cli -Command 'query:session' -Raw | ConvertFrom-Json
-} while ($s.data.busy.init -or $s.data.busy.stateTransition -or -not $s.data.master.present -or $s.data.master.state -ne 'OP')
+  $a = & $cli -Command 'query:actions;limit=3' -Raw | ConvertFrom-Json
+  $fail = $a.data.jobs | Where-Object { $_.state -eq 'failed' } | Select-Object -First 1
+  if ($fail) { throw "建站作业失败: $($fail.reasonCode) - $($fail.detail)" }
+  if (-not $s.data.busy.init -and -not $s.data.busy.stateTransition -and
+      $s.data.master.present -and $s.data.master.state -eq 'OP') { break }
+}
+if (-not $s.data.master.present -or $s.data.master.state -ne 'OP') {
+  throw "180 s 内没到 OP，当前 $($s.data.master.state)"
+}
 
 # 5) 从站真假 OP（刚进 OP 会滞后一拍，最多重试 3 次）
 for ($i=0; $i -lt 3; $i++) {

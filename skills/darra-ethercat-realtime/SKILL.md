@@ -64,7 +64,7 @@ if (st.Mode != SoftRealtimeMode.Active && st.Mode != SoftRealtimeMode.KernelOffl
 | 这台机器配了隔离核吗 | `master.IsolationConfigured`（`bool`） | `true` = 系统实时核预留存在。**只说明配置在，不说明本会话用上了** |
 | 本会话真的进了硬实时吗 | `master.HardRealtimeActive`（`bool`） | `true` = 内核 DISPATCH 周期证据存在 |
 | 周期在跑但没进硬实时？ | `master.SoftRealtimeActive`（`bool`） | `true` = 周期在跑，但没有内核 DISPATCH |
-| 实际绑到哪个核 | `master.PinCore`（`int`）/ `SoftRealtimeStatus.PdoCore`（`int`） | `-1` = 未知或没绑上；`>= 0` 是真核号 |
+| 实际绑到哪个核 | `master.PinCore`（`int`）/ `DarraEtherCAT.SoftRealtimeStatus.PdoCore`（`int`） | `-1` = 未知或没绑上；`>= 0` 是真核号 |
 
 要一次拿全，读 `master.IsolationStatus`（返回 `RtIsolationStatus`）：
 
@@ -162,7 +162,7 @@ DENI 加载契约要求：DC 使能时，从站 SYNC0 周期非 0 **且与主站
 |---|---|---|
 | **隔离核没配** | `master.IsolationConfigured == false`；日志里有一条「未检测到 RT 核隔离」Warning | 用官方安装器重装，**不要**自己改系统；装的时候别带 `--no-rt-optimize` |
 | **配了隔离但本会话没进去** | `IsolationConfigured == true` 且 `HardRealtimeActive == false` 且周期已在跑；`RtAlarmMessage` 有中文报警 | 这是要报的问题，不是「调一调就好」。看 `AlarmMessage` 里的 mask / core / jitter 字段 |
-| **PDO 线程没绑上预留核** | `SoftRealtimeStatus.PdoCore == -1`，或 `ThreadPriorityApplied == false`；`master.PinCore == -1` | 看 `SoftRealtimeStatus.Reason`；确认安装器确实预留了核（`ReservedCoreCount > 0`） |
+| **PDO 线程没绑上预留核** | `DarraEtherCAT.SoftRealtimeStatus.PdoCore == -1`，或 `ThreadPriorityApplied == false`；`master.PinCore == -1` | 看 `SoftRealtimeStatus.Reason`；确认安装器确实预留了核（`ReservedCoreCount > 0`） |
 | **预留核被别的实时任务占了** | 平均抖动整体偏高，`RtPreemptCount` 持续增长 | 同一台机器上不要跑第二个吃实时核的程序；一个核只给一个主站 |
 | **电源计划被改回去了** | SDK **不报**电源计划。只能现场核对：`powercfg /getactivescheme` 应显示「卓越性能」或「高性能」 | 改回性能计划；安装器会配，但用户/组策略可能改掉 |
 | **网卡中断落到了别的核** | `RtPreemptCount` / `BigGapUnknownCount` 增长，`RtPreemptPeakNs` 偏大；`LateFrameRate` 偏高 | 现场调网卡中断亲和性；安装器不动这一项 |
@@ -189,8 +189,8 @@ using System.Diagnostics;
 using System.Threading;
 using DarraEtherCAT_Master;
 
-static ulong Delta(ulong now, ulong prev) => now >= prev ? now - prev : now;
-static uint  Delta(uint  now, uint  prev) => now >= prev ? now - prev : now;
+static ulong DeltaU64(ulong now, ulong prev) => now >= prev ? now - prev : now;
+static uint  DeltaU32(uint  now, uint  prev) => now >= prev ? now - prev : now;
 
 static void SampleRealtime(DarraEtherCAT master, int seconds = 30)
 {
@@ -216,11 +216,11 @@ static void SampleRealtime(DarraEtherCAT master, int seconds = 30)
         Thread.Sleep(200);
         var s = diag.GetSnapshot();
 
-        cycles  += Delta(s.CycleCount,             prev.CycleCount);
-        preempt += Delta(s.RtPreemptCount,         prev.RtPreemptCount);
-        overrun += Delta(s.KtimerWakeOverrunCount, prev.KtimerWakeOverrunCount);
+        cycles  += DeltaU64(s.CycleCount,             prev.CycleCount);
+        preempt += DeltaU64(s.RtPreemptCount,         prev.RtPreemptCount);
+        overrun += DeltaU32(s.KtimerWakeOverrunCount, prev.KtimerWakeOverrunCount);
         for (int i = 0; i < 7; i++)
-            hist[i] += Delta(s.JitterHistogramBins[i], prev.JitterHistogramBins[i]);
+            hist[i] += DeltaU32(s.JitterHistogramBins[i], prev.JitterHistogramBins[i]);
 
         if (s.BusMaxJitterUs > maxSeenUs) maxSeenUs = s.BusMaxJitterUs;
         prev = s;
@@ -251,6 +251,7 @@ static void SampleRealtime(DarraEtherCAT master, int seconds = 30)
 - **最大值看 `BusMaxJitterUs`**（含 SMI）与 `BusCleanMaxJitterUs`（排除 SMI）。两者差得越大，SMI 嫌疑越大。
 - **`HasJitterInstrumentation == false`** = 驱动没提供抖动统计，不要读成「抖动 0」。注意它要求 `JitterInstrumentVersion != 0` **且** `JitterTotalSamples > 0` —— 刚进 OP 的头一两秒可能还没攒到样本，稍等一下再采。
 - **`CycleState`**：`CycleCount` / `CycleTimeSpan` / `BusCycleHz` 是 0 时它才是判据 —— `NotStarted`（没启动）/ `StartedNoAdvance`（启动但卡住）/ `Advancing`（正常推进）。**不允许只回一个 0 糊三种含义。**
+  它在 `master.Diagnostics.CycleState` 上，**不在 `GetSnapshot()` 的返回对象里**（快照里有 `CycleCount` / `CycleTimeUs`，没有 `CycleState`）。
 - **实测频率对不上期望** = 周期没跑到，不是抖动问题。
 - **直方图**：`>=100 µs` 桶有稳定增量 = 偶发尖峰（SMI / 抢占）；`1-2 µs` 桶占绝大多数 = 常态正常。
 
@@ -317,8 +318,8 @@ static void SampleRealtime(DarraEtherCAT master, int seconds = 30)
 
 **配置与事件**
 
-- `MasterConfig.LoopCycle` — `Master\MasterConfig.cs:46`；`DarraEtherCAT.LoopCycle` 与推荐最小值常量 — `Master\Core.cs:1743,1756`
-- `DarraEtherCAT.DcCycle`（与 `LoopCycle` 不可互换）— `Master\Core.cs:1844`
+- `MasterConfig.LoopCycle` — `Master\MasterConfig.cs:46`；`master.LoopCycle`（**实例属性，不是静态**）与推荐最小值常量 — `Master\Core.cs:1743,1756`
+- `master.DcCycle`（实例属性，与 `LoopCycle` 不可互换）— `Master\Core.cs:1844`
 - `ConfigureDC(...)` 主站级 — `Master\Slave\DC.cs:2398`；从站级 — `Master\Slave\DC.cs:1102`
 - `ProcessDataCyclicSync` 事件 — `Master\Events.cs:1126`；委托「在实时线程中直接执行」— `Master\Events.cs:262-266`
 - DC 契约（`DcCycleTime == CycleTime`）— `Master\Utils\Xml.cs:1296-1297`

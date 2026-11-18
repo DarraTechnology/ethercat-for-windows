@@ -212,7 +212,7 @@ if (!ok) Console.WriteLine(err);   // err 里已点名"停留在哪个状态 + �
   - **但别只看这一位**：部分器件（如 EK1100）在健康、在 OP、计数器不递增、AL 干净时仍返回 bit0 = 0。要用 `Conclusive` 与 `0x0442` 计数器一起判：只有「位说溢出 + 状态已知 + 确实在 OP + 计数器不推进」四条同时成立，才认定证据自相矛盾。`Expired` 语义不变，仍如实反映 bit0。
 - 怎么修：
   - 先查周期是否过慢、线缆/供电是否稳定、主站负载是否过高。
-  - 调整 `slave.SetWatchdog(ms)` 时注意：分支站安全下限 5000 ms、环上 PDO 站 400 ms，请求被抬升时方法抛 `InvalidOperationException` 并给出实际下发值，**不谎报按请求设置成功**。
+  - 调整 `slave.SetWatchdog(uint ms)` 时注意：签名是 `bool SetWatchdog(uint timeoutMs)`（传 `int` 变量编译不过，要么转 `uint` 要么用字面量）；分支站安全下限 5000 ms、环上 PDO 站 400 ms，请求被抬升时方法抛 `InvalidOperationException` 并给出实际下发值，**不谎报按请求设置成功**。
 - 出处：`CSharp\Master\Slave\Core.cs:1500-1533`（看门狗状态与 Conclusive）、`:1402-1413`（SetWatchdog 与安全下限）；`云端\ethercat-doc\docs\faq\error-codes.md:83`。
 
 **B. DC 未同步（AL `0x002D` "Sync not received"）**
@@ -558,6 +558,10 @@ GUI 的周期异常报警阈值（可作为「跑不满」的判据）：RTcnt �
 
 出处：`云端\ethercat-doc\docs\downloads.md:56-70`。
 
+> **实测（2.13.16）：未知开关不会被拒绝。** `--silent --install --no-such-flag` 会照常安装并以 `3010` 结束；
+> `1639` 只覆盖「已知参数值不合法」（`--rt-masters` 缺值/非整数/越界、`--repair`）。拼错参数不会报错，
+> 只会静默按有效参数安装 —— 命令要逐字对照官方网站的下载页。
+
 ### 怎么修
 
 - **看到 `3010`**：告诉使用人「已安装成功，需要重启才生效」，重启时机由使用人决定。**不要自动重启机器**，**不要因为「还没生效」反复重装**。重启后如仍未完成，再运行一次安装包。
@@ -603,8 +607,9 @@ GUI 的周期异常报警阈值（可作为「跑不满」的判据）：RTcnt �
 ### 怎么查
 
 ```csharp
-var status = DarraEtherCAT.Authorization.LicenseStatus;
-bool gateClosed = DarraEtherCAT.Authorization.DataGateClosed;
+// Authorization 是顶层类（DarraEtherCAT_Master.Authorization），不是 DarraEtherCAT 的成员
+var status = Authorization.LicenseStatus;
+bool gateClosed = Authorization.DataGateClosed;
 ```
 
 - 先查 `LicenseStatus`：`Expired` / `Failed` / `QuotaExceeded` / `NotVerified` 都按未验证处理。

@@ -37,7 +37,10 @@ git clone https://github.com/DarraTechnology/Ethercat_Master.git
 cd Ethercat_Master
 ```
 
-克隆不带 `bin/`。Ezi-SERVO2 随附两份开发台架的 `config.deni`（换台架不可用），其它案例不随附；示例目录不含厂商 ESI。自己的台架必须用 GUI 扫描后导出 DENI、导入自己的 ESI，不能手写 DENI。
+克隆**带** `bin/`：README 明确写明那些是更早 SDK 的 Debug 产物、不要直接运行，要在本机从源码重新编译；整仓约 90 MB。
+Ezi-SERVO2 随附两份开发台架的 `config.deni`，`STF-EC_CSP_PP` / `STF-EC_ECam` / `STF-EC_SyncAxis` 也各带一份
+（都是开发台架配置，换台架不可用），其余案例不随附；示例目录不含厂商 ESI。自己的台架必须用 GUI 扫描后导出 DENI、
+导入自己的 ESI，不能手写 DENI。
 
 ### 九个案例
 
@@ -145,7 +148,9 @@ MSBuild 路径按本机 VS 安装调整。DENI 默认读 exe 同目录，也可�
 
 逐项注入，确认测试**判 FAIL 且带得出错误码**，而不是进程崩了或异常被吞：
 
-- 读不存在的 SDO 对象 → `AbortCode` 应为 `0x06020000`（对象不存在），不是静默返回空
+- 读不存在的 SDO 对象 → 必须**判 FAIL 并带出 abort 码**：设备实现了该对象时为 `0x06020000`（对象不存在），
+  设备完全不应答时为 `0x05040000`（SDO 协议超时，实测 2.13.16 + Ezi/HCFA 台架就是 `0x05040000`）。
+  两种都不是「静默返回空」；断言里写「非 null 且 Ok」即可，不要写死某一个 abort 码。
 - 拔掉一个从站 → `slave.IsLost` / `SlaveOffline` 事件 / `WcContributed != Contributed`，其它站继续跑
 - 非法状态跳转 → `SetState` 返回 false 且 `err` / `last_state_error` 有逐站原因
 - 故障注入后如果测试仍然 PASS，说明断言根本没测到点子上
@@ -289,7 +294,8 @@ static class Smoke
 }
 ```
 
-要点：`SdoReadResult` 的成功标志是 `.Ok`，不是 `.Success`。`master.Slaves` 是 0 基列表，`SlaveNum` / 事件里的下标是 1 基。`master.Close()` 必须执行；实际测试放到 `try/finally`。测试进程以管理员权限运行，否则扫描 / 建站会因权限失败，不要误判成空口。
+要点：工程必须锁 x64（`dotnet run -p:PlatformTarget=x64`，或在 csproj 写 `<PlatformTarget>x64</PlatformTarget>`），
+否则 SDK 的 buildTransitive 在编译前就直接报「当前仅支持 x64」。`SdoReadResult` 的成功标志是 `.Ok`，不是 `.Success`。`master.Slaves` 是 0 基列表，`SlaveNum` / 事件里的下标是 1 基。`master.Close()` 必须执行；实际测试放到 `try/finally`。测试进程以管理员权限运行，否则扫描 / 建站会因权限失败，不要误判成空口。
 
 ## 最小测试片段（Python）
 
