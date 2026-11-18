@@ -31,7 +31,7 @@ L5 跑通了，才可以额外说「进 OP 成功，身份对象读得到」。
 | 层 | 判据 | 通过的样子 | 不通过先查 |
 |---|---|---|---|
 | L0 | 安装器退出码 | `0` = 已生效；`3010` = 已成功、**重启后**才生效 | 见 [`darra-runtime-install`](../darra-runtime-install/SKILL.md) 的退出码表 |
-| L1 | 安装目录下 `SDK\SDK_CSharp\DarraEtherCAT.dll` 等文件存在 | 六种语言的 SDK 目录都在 | 安装目录是否用了 `--path` 改过；安装是否被 1603 / 1604 中断 |
+| L1 | 安装目录下 `SDK\SDK_CSharp\DarraEtherCAT.dll` 等文件存在 | 六种语言的 SDK 目录都在 | 安装目录是否与安装器登记位置一致；安装是否被 1603 / 1604 中断 |
 | L2 | `typeof(DarraEtherCAT).Assembly` 能取到版本 | `sdk_version` 是正常版本号 | 包没还原、架构不对、Runtime 缺失 |
 | L3 | `GetNetworkAdapters()` 返回非空清单 | 至少有一张 `EtherCatCapable = true` 的物理有线网卡 | 网卡是否被禁用；是否只有无线/虚拟网卡 |
 | L4 | 逐口 `NicScanState` | `HasSlaves`（≥1 站）或 `EmptyBus`（实测 0 站） | 全是 `NotMeasured` / `Unsupported` / `Failed` 时按 `State` 查 |
@@ -79,7 +79,7 @@ SDK/
 ```
 
 ```powershell
-$sdk = 'C:\DARRA\EtherCAT_Master\SDK'   # 用过 --path 就换成实际安装目录
+$sdk = 'C:\DARRA\EtherCAT_Master\SDK'   # 安装目录由安装器决定，以卸载项 InstallLocation 为准
 Get-ChildItem $sdk
 Get-ChildItem "$sdk\SDK_CSharp"         # 应能看到 Darra.EtherCAT.Master.<版本>.nupkg
 ```

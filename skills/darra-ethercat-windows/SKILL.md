@@ -7,7 +7,7 @@ description: >
   六语言入口差异、Windows 专属坑（主站独占网口需 Close 归还、驱动换入要重启、三个扫描入口怎么选）、
   以及怎么区分「没量到」和「实测空口」。
   触发词：Windows、装包、安装、装驱动、静默安装、silent install、卸载、重装、升级、3010、需要重启、
-  --rt-masters、--path、--no-rt-optimize、装完怎么确认、写主站程序、
+  --rt-masters、装完怎么确认、写主站程序、
   QuickScan、ScanSlaves、QuickSlaveCount、StandardScan、绑定网卡、专用口、网口不归还、
   扫不到从站、没量到、空口、三态。
 ---
@@ -80,8 +80,8 @@ https://download.darra.xyz/ethercat/client/Darra-EtherCAT-Setup.exe.sha256   ←
 # 安装 / 升级（装没装过旧版都是这一条）
 .\Darra-EtherCAT-Setup.exe --silent --install
 
-# 指定安装目录、不做实时优化、主站数 2
-.\Darra-EtherCAT-Setup.exe --silent --install --path "D:\DARRA\EtherCAT_Master" --no-rt-optimize --rt-masters 2
+# 主站数 2（安装目录由安装器决定，实时优化不可关闭）
+.\Darra-EtherCAT-Setup.exe --silent --install --rt-masters 2
 
 # 卸载（独立动作，只在用户明确要卸时执行）
 .\Darra-EtherCAT-Setup.exe --silent --uninstall
@@ -97,9 +97,9 @@ https://download.darra.xyz/ethercat/client/Darra-EtherCAT-Setup.exe.sha256   ←
 |---|---|
 | `--silent --install` | 静默安装 / 升级 |
 | `--silent --uninstall` | 静默卸载 |
-| `--path DIR` | 指定安装目录 |
-| `--no-rt-optimize` | 跳过实时优化 |
 | `--rt-masters 1..4` | RT 主站数，即预留的实时核数，装完记在机器上 |
+
+安装目录由安装器决定，实时优化不可关闭。
 
 `--rt-masters` 只收 1 到 4 的整数。缺值、不是整数、越界 → 安装器直接失败（1639），**不兜底成 1**。
 用户没说要几个就问，不要替用户补默认值。

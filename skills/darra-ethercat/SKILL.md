@@ -55,7 +55,7 @@ https://download.darra.xyz/ethercat/client/Darra-EtherCAT-Setup.exe
 
 已装过旧版：**直接再跑一次同一个安装包就是升级**，不用先卸载、不用先重启。安装器会按驱动状态自己处理已装版本（先停旧驱动，再删旧驱动与旧程序文件，然后装本次版本）。只有真的要卸掉时才走 `--silent --uninstall`。把升级拆成「卸载 → 重启 → 安装」三步是错的。
 
-静默安装只用安装包自己的参数：`--silent --install` 或 `--silent --uninstall`，可选 `--path DIR`、`--no-rt-optimize`、`--rt-masters 1..4`。`--rt-masters` 缺值、不是整数或超出 1 到 4，直接失败，不要改成 1。
+静默安装只用安装包自己的参数：`--silent --install` 或 `--silent --uninstall`，主站数量可选 `--rt-masters 1..4`。安装目录由安装器决定，实时优化不可关闭。`--rt-masters` 缺值、不是整数或超出 1 到 4，直接失败，不要改成 1。
 
 公开安装包是 Windows 的。Linux 版规划中，尚未发布，不要写 Linux 安装命令。
 

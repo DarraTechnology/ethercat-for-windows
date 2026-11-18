@@ -165,12 +165,10 @@ Get-NetAdapterBinding -Name '<上面选中的网卡名>' |
 .\Darra-EtherCAT-Setup.exe --silent --uninstall
 ```
 
-可选参数，只在需要时加：
+安装目录由安装器决定，实时优化不可关闭。主站数量按需指定：
 
 | 参数 | 作用 |
 |---|---|
-| `--path DIR` | 指定安装目录（默认 `C:\DARRA\EtherCAT_Master`） |
-| `--no-rt-optimize` | 跳过实时优化 |
 | `--rt-masters 1..4` | RT 主站数，也就是预留的实时核数，装完记在机器上 |
 
 `--rt-masters` 只收 1 到 4 的整数。缺值、不是整数、超出范围，安装器**直接失败**（退出码 1639），不会用默认值兜底。不要把它改成 1 再试，先跟用户确认要几个。
