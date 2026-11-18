@@ -127,6 +127,48 @@ DENI 路径下网卡是怎么选的（了解即可，不要自己写选卡逻辑
 
 所以 **DENI 里的网卡名与机器不一致时，会退化成慢路径**。换机器/换网卡后重新导出一份。
 
+### 2.1 克隆部署：网卡名字一样、MAC 变了
+
+现场很多机器是**克隆镜像**装出来的：Windows 里的接口名（「以太网 3」）甚至 NDIS 接口 GUID 都可能
+原样保留，但 MAC 是网卡硬件的出厂地址，**换了机器一定不同**。这时要分清是谁在认卡：
+
+| 谁在认卡 | 认什么 | 克隆机上会怎样 |
+|---|---|---|
+| **SDK 主体**（`ParseDeniXmlConfig` → `ResolveNicByDeniInfo`） | 只认 `deni:Interface`（`\Device\NPF_{GUID}` / Windows 友好名 / 网卡描述）+ `deni:ExpectedSlaveCount`；**`deni:InterfaceMAC` 与 `Master/Info/Source` 不参与选卡** | GUID/名字命中 → 照常连（最快）；GUID 变了 → 按「从站数 == DENI 期望数」找唯一一张（多付一次枚举/活扫）；多条总线从站数相同 → 报 `-42 RESULT_ERR_DENI_NIC` |
+| **应用层自己的 MAC 预检**（倒立摆示例 `BusSession.MatchNic`） | `Master/Info/Source` 的 MAC，必须与本机唯一一张网卡相等 | **直接拒绝**，而且 `--nic` 也救不了（显式给名仍比对 MAC） |
+
+实测（2026-11-18，台架 `192.168.3.120`，Intel `\Device\NPF_{C240A437...}` 2 从站；
+克隆场景 = 复制 DENI、只把 `Master/Info/Source` 与 `deni:InterfaceMAC` 改成一张本机不存在的卡，
+网卡名/描述/GUID 保持与本机一致）：
+
+| 场景 | 结果 | `nic_resolve` 中位数 | `connect_total` 中位数 |
+|---|---|---|---|
+| 同进程断线重连（命中缓存） | 连上 | **1 ms** | 2011 ms |
+| 新进程首连（MAC 命中） | 连上 | **1144 ms** | 7093 ms |
+| **克隆机（MAC 不命中，默认）** | **拒绝**（`failed:nic_auto`，退出码 4） | **1074 ms**（枚举完就拒） | — |
+| 同机 + 显式 `--nic` | 连上 | **86 ms** | 5727 ms |
+| 克隆机 + `--allow-nic-name-fallback` | 连上 | **1140 ms** | 7102 ms |
+
+读法：**克隆部署本身不慢** —— MAC 不命中时先花约 1.07 s 枚举，然后要么拒（默认）、
+要么按名字回退（开关），耗时与同机冷启动的 1.14 s 基本持平。真正的代价是"连不上"，
+不是"变慢"。显式 `--nic` 反而最快（只剩一次 `GetAllNetworkInterfaces`，约 86 ms）。
+
+三条能用的做法，按优先级：
+
+1. **在新机器上重新导出 DENI**（首选）。MAC 与本机一致，回到最快的「名字命中」，不需要任何放宽。
+2. **显式开关**：`--allow-nic-name-fallback`（CLI 加在 `--cli` 之后；GUI 用
+   `FurutaPendulum.exe --gui --allow-nic-name-fallback`）。默认关闭；
+   只按 DENI 里写死的 `deni:Interface` / `deni:InterfaceDescription` 精确匹配且必须唯一；
+   命中后写一条诊断：
+   `克隆部署网卡名回退已启用：DENI 记录的网卡 MAC=… 在本机不存在；改用本机网卡 "…"（MAC=…，描述，GUID=…）`。
+   **认错卡会把主站绑到另一张连着别的设备的网卡上**，所以不允许默认放宽，回退结果也不进进程内缓存。
+3. **不要为了凑 DENI 去改网卡 MAC**（网卡属性里的"网络地址"）：不是所有驱动都支持，
+   而且两台机器同 MAC 在同一网段会冲突。
+
+> 判据：日志里 `快速连接：DENI 网卡名 '...' → ...，跳过挑选` = 名字命中；
+> `ResolveNicByDeniInfo: 名称不对, 唯一网口从站数=N 与 DENI 一致` = 克隆机按从站数兜底；
+> `无匹配网卡` / `-42` = 必须重新导出 DENI。
+
 ---
 
 ## 3. DENI 从哪来：在 GUI 里配好一次，导出
@@ -264,6 +306,7 @@ DENI 拿到 `6/6`、两个站都武装。**DENI 不是「少做点事所以快�
 | 第二次连接卡 20 s 左右 | 上一次没有 `Close()`，驱动在等实例交还 | 所有路径（含异常）都 `finally { master.Close(); }` |
 | 重连偶发失败，报 `SetNetwork 打开网卡失败 (LoadConfigJson 返回 -52)` | 上一轮刚断，实例还没交还；实测同进程连到第 3 次可能撞上 | 重连前留 300 ms 以上间隔；失败就把 `result.Message` 报出来，间隔后重试一次 |
 | 冷机第一次特别慢 | ESI 索引缓存没建，全量解析 120+ 个文件要多 2.0–2.3 s | 用 DENI 就不受影响 |
+| `LoadConfigJson 返回 -41`，诊断定位到 `slave=N index=0x0980 proto=DC` | DENI 里同一从站的**两处 DC 声明互相矛盾**：标准 `<DC><CycleTime0>…</CycleTime0></DC>` 说 SYNC0 非 0，而 `deni:DC/HasDC` 说 DC 关闭（旧导出器留下的文件常见） | 重新导出 DENI（同一份导出里两处必须一致）；手工修时以 `deni:DC` 为唯一权威，删掉或清零标准 `<DC>` 段（native 允许标准段缺省） |
 | 以为 `GetNetworkInfo` 每次都慢 | 第一次含 5.7 s 原生初始化 | 看第二次的耗时 |
 
 ---

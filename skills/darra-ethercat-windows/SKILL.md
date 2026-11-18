@@ -294,6 +294,44 @@ WinForms 用 `Invoke` / `BeginInvoke`，WPF 用 `Dispatcher`。更多 API 细则
    不要混用取值。空口在前者叫 `EmptyBus`，在后者叫 `IdleNoSlave`。
 3. `QuickSlaveCount` 返回负值（如 `-2` 未测量、`-3` 主站占用）时**不能当 0 站**。
 
+### 5.4 克隆部署：镜像搬到新机器，网卡名字一样但 MAC 变了
+
+客户现场常用克隆镜像部署。Windows 里的接口名（「以太网 3」）甚至 NDIS 接口 GUID 都可能原样保留，
+但 MAC 是网卡硬件的出厂地址，**换了机器一定不同**。
+
+先把两条路径分开——它们不是同一条链：
+
+- **SDK 主体选卡不看 MAC**：`SetENI(...).Build()` 走原生 `ParseDeniXmlConfig` → `ResolveNicByDeniInfo`，
+  只认 `deni:Interface`（`\Device\NPF_{GUID}` / Windows 友好名 / 网卡描述）与 `deni:ExpectedSlaveCount`。
+  名字命中就直接绑；命不中按「从站数 == DENI 期望数」找唯一一张；再不行才报 `-42`（`RESULT_ERR_DENI_NIC`）。
+  **`deni:InterfaceMAC` / `Master/Info/Source` 不参与选卡**，所以纯 SDK 用法在克隆机上通常能连
+  （GUID 变了会多付一次枚举 / 活扫）。
+- **应用层自己加的 MAC 预检会拦**：例如开源案例里的倒立摆程序，`MatchNic` 要求 DENI 的
+  `Master/Info/Source` 与本机唯一一张网卡的 MAC 相等；克隆机上必然不等，而且 `--nic` 也救不了
+  （显式给名后仍比对 MAC）。这时报错是应用层的 fail-closed，不是 SDK 连不上。
+
+正解按优先级：
+
+1. **在新机器上重新导出 DENI**（首选）。MAC 与本机一致，回到最快的「名字命中」，不需要任何放宽。
+2. **显式开关**：倒立摆示例的 `--allow-nic-name-fallback`（CLI 加在 `--cli` 之后；GUI 用
+   `FurutaPendulum.exe --gui --allow-nic-name-fallback`）。默认关闭，只按 DENI 里写死的
+   `deni:Interface` / `deni:InterfaceDescription` 精确匹配且必须唯一，命中后日志大声写明
+   「DENI 原本的 MAC → 本机实际网卡名 + MAC + 描述 + GUID」。
+   认错卡会把主站绑到另一张连着别的设备的网卡上，所以**不允许默认放宽**。
+3. **不要为了凑 DENI 去改网卡 MAC**：不是所有驱动都支持，而且两台机器同 MAC 在同一网段会冲突。
+
+现场怎么判走了哪条路（GUI / SDK 日志原文）：
+
+| 日志 | 含义 |
+|---|---|
+| `快速连接：DENI 网卡名 '...' → ...，跳过挑选` | 名字命中，最快路径 |
+| `ResolveNicByDeniInfo: 名称不对, 唯一网口从站数=N 与 DENI 一致 → ...` | 克隆机按从站数兜底（多一次枚举 / 活扫） |
+| `ResolveNicByDeniInfo: 无匹配网卡` / `-42` | 名字和从站数都对不上，必须重新导出 DENI |
+| `克隆部署网卡名回退已启用：DENI 记录的网卡 MAC=... 在本机不存在；改用本机网卡 "..."` | 示例程序在显式开关下按名字回退，务必核对 MAC 是否就是要接的那张卡 |
+
+细节、四场景实测数字与判据见
+[`darra-ethercat-fast-connect`](../darra-ethercat-fast-connect/SKILL.md) §2.1。
+
 ---
 
 ## 6. 验证：区分「没量到」和「实测空口」

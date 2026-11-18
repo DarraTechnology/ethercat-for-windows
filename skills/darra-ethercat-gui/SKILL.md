@@ -2,14 +2,17 @@
 name: darra-ethercat-gui
 description: >
   用 Darra EtherCAT Master 图形界面完成从选网卡、扫描从站、加载 DENI/ESI、配置 PDO 映射与启动参数、设置 DC，
-  到启动主站、切到 OP、实时监视和导出配置/代码的全流程。
+  到启动主站、切到 OP、实时监视和导出配置/代码的全流程；也包含 **AI 无人值守驱动 GUI** 的完整规范流程
+  （命令通道：快扫网卡、选卡建站、切状态、读真假 OP、改参数、导出、释放主站）。
   触发词：Darra EtherCAT 图形界面、EtherCAT Master 工具、打开主站工具、选网卡、加载网卡、扫描从站、导入 DENI、
-  导入 ESI、PDO 映射、启动参数、Startup SDO、DC 配置、SYNC0、状态机、进 OP、诊断面板、导出 DENI、导出代码。
+  导入 ESI、PDO 映射、启动参数、Startup SDO、DC 配置、SYNC0、状态机、进 OP、诊断面板、导出 DENI、导出代码、
+  AI 驱动 GUI、无人值守建站、命令通道、WM_COPYDATA、自动进 OP。
 ---
 
 # Darra EtherCAT Master 图形界面
 
-这份 skill 只讲界面怎么点。要写主站程序（周期回调、业务逻辑、伺服使能），用 `darra-ethercat` 技能，API 以 https://ethercat.darra.xyz/ai-prompts.txt 为准。
+这份 skill 讲界面怎么点；**要让 AI 不点鼠标直接驱动 GUI，看第 10 节**（从零到看见 PDO 的完整规范流程）。
+要写主站程序（周期回调、业务逻辑、伺服使能），用 `darra-ethercat` 技能，API 以 https://ethercat.darra.xyz/ai-prompts.txt 为准。
 
 下面按中文界面写。换语言后按钮文字会变，认位置和控件类型；界面里没有的能力见最后一节，不要硬找。
 
@@ -374,3 +377,217 @@ DC 模式/SYNC0/SYNC1 控件只在 PreOp 可改；其它状态页内显示 `运�
 | 监视 PLC 变量或写 PLC 逻辑 | 这个工具只做主站配置与监视 | 用 PLC IDE/程序 |
 
 需要写代码时，转到 `darra-ethercat` 技能；API 名称、初始化顺序、状态机、PDO、SDO、CiA 402、DC 都以 https://ethercat.darra.xyz/ai-prompts.txt 为准，不要凭这份界面文档猜接口。
+
+## 10. 让 AI 直接驱动 GUI（无人值守全流程）
+
+这一节是给智能体用的：**不点鼠标、不开模态框，只发命令**，把「快扫网卡 → 选卡建站 → 进 OP → 看 PDO → 收尾」跑完。
+
+传输方式：向 GUI 主窗口发 `WM_COPYDATA`，载荷 `DARRAGUI1|<命令>`（UTF-16LE，无结尾 NUL）；
+GUI 反向回 `DARRAGUI1R|<json>`。回执是 5 键信封：`ok / cmd / requestId / reason{code,detail} / data`。
+仓内自带客户端 `AI/tools/Invoke-GuiCommand.ps1`（自动找窗口、发一条、收回执、打印 JSON），下面示例都用它。
+
+### 0. 什么时候用这条通道
+
+| 场景 | 用哪条 |
+|---|---|
+| GUI 已经在跑，且要用**它里面那个主站**（不是另起一个） | 本节命令通道 |
+| GUI 已经跑着，要选另一张网卡重建主站 | `act:connect`（会先关旧主站再建，和界面「切换 → 确认」同一条路） |
+| GUI 没跑，只想扫描/建站/出 DENI | 无头 CLI（同一支 exe 加旗标），不要为了跑命令去开 GUI |
+| 只想读状态 | `query:*`，不要建站 |
+
+### 1. 前置检查（不过就别往下走）
+
+1. GUI 进程在跑，主窗口可见。
+2. 自动化进程与 GUI 的完整性级别要能互发消息；发不进去的典型表现是 `NO_REPLY` / `ACCESS_DENIED`。
+3. 一条命令对应一条回执；异步动作（建站/切态/断开/导出）是**两条**。
+
+**判据**：`Invoke-GuiCommand.ps1 -Command "query:session" -Raw` 打出 JSON，且 `data.gui.pid` 与 GUI 进程号一致、`data.busy` 三个布尔都是 `false`。
+
+### 2. 快扫网卡 → 怎么挑
+
+```
+query:nic-scan
+```
+
+每张卡给：`guid / mac / name / description / bound / linkStatus / ethercatCapable / occupied / state / recommended / why`，
+外加 `elapsedMs / enumMs / cacheAgeMs / stale / source`。
+
+`state` 的读法（判定顺序固定）：
+
+| `state` | 含义 | 能不能选 |
+|---|---|---|
+| `ready` | 已绑定协议、链路 Up、未被本进程占用 | 首选 |
+| `unbound` | 链路 Up、未被占用，但未绑协议（建站时自动绑） | 可选 |
+| `occupied` | 被本进程主站占着 | 不能，先换卡或先 `act:disconnect` |
+| `link-down` | 链路 Down | 不能 |
+| `link-unknown` | 系统没报链路 | 不建议 |
+| `not-capable` | 虚拟/无线/黑名单口 | 不能 |
+
+**判据**：挑中的那一行 `linkStatus="up"` 且 `state` 为 `ready` 或 `unbound`；把它的 `guid` 原样记下来。
+`recommended=true` 只是"当前清单里最像的一张"，**多总线台架要按 `guid`/`mac` 精确选，别用推荐位**。
+
+两个必须分清的数：
+- `slaveCount` 恒为 `null`、`scanState` 恒为 `not-scanned` —— 本命令**不扫从站**（扫描会占用网卡、可能打断另一条正在跑的总线）。**不要读成 0 个从站。**
+- `elapsedMs` 是本次处理器耗时（命中快照时 0–5 ms），`cacheAgeMs` 是快照年龄（3 秒内视为新鲜，`stale=true` 表示先给了旧快照并已在后台刷新）。
+
+### 3. 建站：分阶段回执怎么等
+
+```
+act:connect;nic=<guid 或 mac>[;start=OP|SAFE_OP|PRE_OP|INIT]
+```
+
+- 先同步回一条 `accepted`（`data.accepted=true`、`job=connect`、`jobId`）。
+- 作业完成后另回一条**同 `cmd`、同 `jobId`** 的结果回执；回执窗口已关时这条会丢，结论改从第 4 步轮询取。
+
+**轮询**（每 1–2 s 一次 `query:session`），全部满足才算建站完成：
+
+```
+busy.init == false
+busy.stateTransition == false
+master.present == true
+master.slaveCount > 0
+（给了 start 时）master.state == 目标态
+```
+
+**超时**：首次全扫描 30–120 s 属正常；超过 180 s 先别重发，查 `query:actions` 里这条 `jobId` 是 `running` 还是 `failed`。
+
+**撞车处置**：
+- `BUSY` → 已有作业在跑，等它结束，别并发。
+- `NIC_OCCUPIED` → **退让**：等占用方释放（建议 15 s 一次重试），不要换一张卡硬抢。
+- `ESI_CONFIRM_REQUIRED` → 缺 ESI / Revision 不匹配，需要人工确认；无人值守下不自动放行，补 ESI 后重试。
+- `NO_SLAVES` → 主站建起来了但 0 从站：查供电/接线，确认选的是这条总线的卡。
+
+### 4. 确认主站真的起来了
+
+```
+query:session
+```
+
+**判据**：`master.present=true`、`master.masterNumber>0`、`master.slaveCount` 与实物从站数一致、
+`master.configApplied=true`、`master.state` 是 `OP`（或你要的目标态）。
+从站数对不上 → 先怀疑选错了网卡（另一条总线）。
+
+### 5. 看从站真假状态
+
+```
+query:slaves            # 全部
+query:slave;n=1         # 单站
+```
+
+看每个从站的 `truth.verdict`：
+
+| `truth.verdict` | 含义 |
+|---|---|
+| `RealOp` | 真 OP：已进 OP 且有过程数据（**要的就是这个**） |
+| `OpNoProcessData` | 假 OP：状态说 OP，但没有过程数据 |
+| `Abnormal` | 状态异常 / AL 错误 / 掉站 |
+| `Offline` | 真离线 |
+| `Unknown` | 未采样（不是"正常"） |
+
+**判据**：所有站 `truth.verdict="RealOp"` 才算跑起来。刚进 OP 时后台快照会滞后一拍，
+**判"没到"之前先重试 2–3 次**（间隔 ≥1 s）。异常站看 `al` 块的状态码。
+
+### 6. 看实时数据
+
+```
+query:master
+```
+
+- 主站态：`data.state`、`data.aggregatedState`。
+- WKC：`data.wkc.actual / expected / exact / deficit`。`exact=true` 表示实际等于期望。
+- 周期/抖动/往返：`data.cycle`、`data.jitter`、`data.rttUs`；健康度 `data.health`。
+- 真伪：看 `source`（`live` = 本轮实测；`cached` = 后台快照）与 `sampledAtMs`。
+
+**判据**：`wkc.exact=true`、`cycle` 非 0、`jitter` 有值；`state` 与第 4 步一致。
+
+### 7. 改参数
+
+```
+query:writable[;group=master|slave|pdo]     # 取可写能力表
+act:write;path=<path>;value=<value>          # 明文值（不能含 ; 或 =）
+act:write;path=<path>;valueB64=<base64>      # 值含 ; = 或要写空值时用这个
+```
+
+**判据**：`ok=true` 且 `data.verified=true` 且 `data.after` 等于期望值。
+`data.allowedStates` 的比较必须是**逐段精确相等**（`ANY` 通配），不要用子串匹配 —— `OP` 是 `PRE_OP` 的子串。
+
+### 8. 导出
+
+```
+act:export-deni;path=<绝对路径>
+act:export-code;dir=<绝对路径>;lang=csharp|python|java|rust|c|cpp
+```
+
+两段式回执（同第 3 步）。**判据**：文件真的存在，`data.sha256` 与本地重算一致；
+`data.signed=false` 只表示没有签发密钥，不等于导出失败。
+
+### 9. 收尾（必须做）
+
+```
+act:disconnect
+```
+
+**判据**：`query:session.master.present == false`。
+**为什么必须做**：主站独占网卡与驱动通道。不释放，下一路建站会拿到 `NIC_OCCUPIED` / SDK 错误 170，
+表面像"网卡坏了"，实际是上一路没交还。
+
+### 10. 失败处置总表
+
+| 码 | 判据 | 怎么修 |
+|---|---|---|
+| `BAD_REQUEST` | 参数缺失/拼错/重复 | 照命令语法重发；`;` 和 `=` 是分隔符，值里含它们改用 `valueB64` |
+| `UNKNOWN_COMMAND` | subject 拼错 | 查第 9 节命令总表 |
+| `NOT_CONNECTED` | `master.present=false` | 先 `act:connect` |
+| `BUSY` | 已有作业/初始化/切态 | 轮询 `query:session.busy`，等 |
+| `NIC_NOT_FOUND` | 标识不在清单 | 重新 `query:nic-scan` 取 `guid` |
+| `NIC_AMBIGUOUS` | 标识命中多张 | 用完整 GUID |
+| `NIC_OCCUPIED` | 本进程主站占用，或 SDK 报 170/172/32 | **退让重试**，别换卡硬抢 |
+| `NIC_NOT_CAPABLE` / `LINK_DOWN` | `state` 为 `not-capable` / `link-down` | 换卡或查线缆供电 |
+| `NO_SLAVES` | `slaveCount=0` | 查从站供电/接线，确认网卡属于这条总线 |
+| `BUILD_FAILED` | `detail` 是 SDK 原话 | 按 detail 排；权限/驱动身份问题见故障速查 |
+| `ESI_CONFIRM_REQUIRED` | 缺 ESI / Revision 不匹配 | 补 ESI 后重试（无人值守不自动放行） |
+| `ESI_READ_FAILED` | ESI 匹配状态读不到 | 查 ESI 目录与日志 |
+| `START_FAILED` | 建站成功、切态失败 | 看 `detail` 与 `query:slaves` 的 AL 码 |
+| `DISCONNECT_FAILED` | 关闭后主站仍存在 | 看日志；必要时重试一次 `act:disconnect` |
+| `NOT_SUPPORTED` | 只读扫描命令 | 要重建就用 `act:connect` |
+| `INTERNAL` | 未预期异常 | 看 GUI 日志的 Error 项 |
+| 传输层 `NO_REPLY` / `ACCESS_DENIED` | 没有回执 | 权限/完整性级别，或客户端用了阻塞式发送 |
+
+### 11. 一份可直接执行的完整命令序列
+
+```powershell
+$cli = 'AI\tools\Invoke-GuiCommand.ps1'
+
+# 1) GUI 在不在
+& $cli -Command 'query:session' -Raw
+
+# 2) 挑卡（多总线台架按 guid 精确选，不要用 recommended 盲选）
+$scan = & $cli -Command 'query:nic-scan' -Raw | ConvertFrom-Json
+$nic  = $scan.data.adapters | Where-Object { $_.guid -eq '1614f8be-f3bc-498a-a309-d9c9bb1432f9' }
+if (-not $nic -or $nic.state -notin 'ready','unbound') { throw "网卡不可用: $($nic.state)" }
+
+# 3) 建站并进 OP（同步回 accepted，随后可轮询）
+& $cli -Command ("act:connect;nic={0};start=OP" -f $nic.guid) -Raw
+
+# 4) 等建站/切态真正结束
+do {
+  Start-Sleep -Milliseconds 1500
+  $s = & $cli -Command 'query:session' -Raw | ConvertFrom-Json
+} while ($s.data.busy.init -or $s.data.busy.stateTransition -or -not $s.data.master.present -or $s.data.master.state -ne 'OP')
+
+# 5) 从站真假 OP（刚进 OP 会滞后一拍，最多重试 3 次）
+for ($i=0; $i -lt 3; $i++) {
+  $sl = & $cli -Command 'query:slaves' -Raw | ConvertFrom-Json
+  if (($sl.data.slaves | Where-Object { $_.truth.verdict -ne 'RealOp' }).Count -eq 0) { break }
+  Start-Sleep -Seconds 1
+}
+
+# 6) 实时量
+& $cli -Command 'query:master' -Raw
+
+# 7) 收尾（必须）
+& $cli -Command 'act:disconnect' -Raw
+& $cli -Command 'query:actions;limit=20' -Raw
+```
+
+以上每一步的"看到什么算过"见对应小节；任何一步为 `ok=false`，先按第 10 节查码，不要跳过继续。
