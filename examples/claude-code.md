@@ -16,7 +16,7 @@ Project-scoped — checked in with the repository so every teammate gets it:
 
 ```bash
 mkdir -p .claude/skills
-cp -r /path/to/ethercat-skill/skills/*  .claude/skills/
+cp -r /path/to/ethercat-for-windows/skills/*  .claude/skills/
 ```
 
 The layout inside each directory must stay exactly `skills/<name>/SKILL.md` — Claude Code

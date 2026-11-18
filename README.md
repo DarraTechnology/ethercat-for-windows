@@ -126,28 +126,28 @@
 本仓库本身声明为 Claude Code 的插件市场（`.claude-plugin/marketplace.json`），不用拷文件：
 
 ```bash
-claude plugin marketplace add DarraTechnology/ethercat-skill
+claude plugin marketplace add DarraTechnology/ethercat-for-windows
 claude plugin install darra-ethercat-skill@darra-ethercat-skills
 ```
 
-会话里也可以用 `/plugin marketplace add DarraTechnology/ethercat-skill`，再 `/plugin install darra-ethercat-skill@darra-ethercat-skills`。**全部技能体随这一个插件一起装上。**
+会话里也可以用 `/plugin marketplace add DarraTechnology/ethercat-for-windows`，再 `/plugin install darra-ethercat-skill@darra-ethercat-skills`。**全部技能体随这一个插件一起装上。**
 
 也可以用开放的 `skills` CLI 直接从 GitHub 装：
 
 ```bash
-npx skills add DarraTechnology/ethercat-skill
+npx skills add DarraTechnology/ethercat-for-windows
 ```
 
 ### 方式二：拷进 skills 目录
 
 ```bash
-git clone https://github.com/DarraTechnology/ethercat-skill.git
+git clone https://github.com/DarraTechnology/ethercat-for-windows.git
 
 # 个人全局：所有项目都能用
-mkdir -p ~/.claude/skills && cp -r ethercat-skill/skills/* ~/.claude/skills/
+mkdir -p ~/.claude/skills && cp -r ethercat-for-windows/skills/* ~/.claude/skills/
 
 # 或只给当前项目：跟仓库一起提交，团队每个人都能用
-mkdir -p .claude/skills && cp -r ethercat-skill/skills/* .claude/skills/
+mkdir -p .claude/skills && cp -r ethercat-for-windows/skills/* .claude/skills/
 ```
 
 目录结构必须保持 `skills/<name>/SKILL.md`，`name` 和 `description` 从 YAML front matter 读。拷完开新会话即可。
@@ -210,7 +210,7 @@ Proprietary。允许随 Darra EtherCAT Master 使用、复制、原样分发（�
 
 **Why it is trustworthy.** Every factual claim carries a source file and line range pointing at the SDK source, the GUI implementation, or the published docs. Measured numbers are published with their test conditions next to them, and the skills contain explicit "not measured, so not written" sections rather than filling gaps with guesses.
 
-**How to use it.** `claude plugin marketplace add DarraTechnology/ethercat-skill` then `claude plugin install darra-ethercat-skill@darra-ethercat-skills`; or copy `skills/*` into `~/.claude/skills/`; or feed a single `SKILL.md` to any agent and route on its `description` trigger words.
+**How to use it.** `claude plugin marketplace add DarraTechnology/ethercat-for-windows` then `claude plugin install darra-ethercat-skill@darra-ethercat-skills`; or copy `skills/*` into `~/.claude/skills/`; or feed a single `SKILL.md` to any agent and route on its `description` trigger words.
 
 **What it will not do.** It will not generate your application, take over your business logic, or make process decisions for you. It will not bypass the official installer, install anything without asking, or reboot for you. The public installer is Windows x64; the Linux version is planned, not released. It also does not prove real-time performance — verification proves the install is alive, not that your jitter is good.
 
